@@ -69,5 +69,7 @@ export const adminApiExtensions = gql`
         saveAkeneoConnectionSettings(input: SaveAkeneoConnectionSettingsInput!): AkeneoConnectionSettings!
         validateAkeneoCredentials(input: ValidateAkeneoCredentialsInput): AkeneoCredentialValidationResult!
         deleteAkeneoConnectionSettings: DeletionResponse!
+        "Queues a sync of all Akeneo categories to Collections, one page per job."
+        startAkeneoCategorySync: Job!
     }
 `;

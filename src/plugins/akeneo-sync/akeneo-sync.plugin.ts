@@ -5,11 +5,13 @@ import {
     AkeneoConnectionSettingsEntityResolver,
 } from './api/akeneo-connection-settings.resolver';
 import { adminApiExtensions } from './api/api-extensions';
+import { AkeneoSyncAdminResolver } from './api/akeneo-sync.resolver';
 import { AKENEO_SYNC_PLUGIN_OPTIONS } from './constants';
 import { akeneoCustomFields } from './custom-fields';
 import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.entity';
 import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
+import { AkeneoCategorySyncService } from './services/akeneo-category-sync.service';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
 import { PluginInitOptions } from './types';
 
@@ -19,11 +21,16 @@ import { PluginInitOptions } from './types';
         { provide: AKENEO_SYNC_PLUGIN_OPTIONS, useFactory: () => AkeneoSyncPlugin.options },
         AkeneoConnectionSettingsService,
         AkeneoApiService,
+        AkeneoCategorySyncService,
     ],
     entities: [AkeneoConnectionSettings],
     adminApiExtensions: {
         schema: adminApiExtensions,
-        resolvers: [AkeneoConnectionSettingsAdminResolver, AkeneoConnectionSettingsEntityResolver],
+        resolvers: [
+            AkeneoConnectionSettingsAdminResolver,
+            AkeneoConnectionSettingsEntityResolver,
+            AkeneoSyncAdminResolver,
+        ],
     },
     configuration: config => {
         config.authOptions.customPermissions.push(manageAkeneoSyncPermission);
