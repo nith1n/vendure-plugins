@@ -1,4 +1,4 @@
-import { PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
+import { CustomFields, PluginCommonModule, Type, VendurePlugin } from '@vendure/core';
 
 import {
     AkeneoConnectionSettingsAdminResolver,
@@ -6,6 +6,7 @@ import {
 } from './api/akeneo-connection-settings.resolver';
 import { adminApiExtensions } from './api/api-extensions';
 import { AKENEO_SYNC_PLUGIN_OPTIONS } from './constants';
+import { akeneoCustomFields } from './custom-fields';
 import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.entity';
 import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
@@ -24,6 +25,10 @@ import { PluginInitOptions } from './types';
     },
     configuration: config => {
         config.authOptions.customPermissions.push(manageAkeneoSyncPermission);
+        for (const [entity, fields] of Object.entries(akeneoCustomFields)) {
+            const key = entity as keyof CustomFields;
+            config.customFields[key] = [...(config.customFields[key] ?? []), ...(fields ?? [])];
+        }
         return config;
     },
     exports: [AkeneoConnectionSettingsService],
