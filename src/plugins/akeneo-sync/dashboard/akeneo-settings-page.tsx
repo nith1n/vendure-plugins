@@ -1,5 +1,4 @@
 import {
-    ActionBarItem,
     Alert,
     AlertDescription,
     AlertTitle,
@@ -10,12 +9,10 @@ import {
     FormFieldWrapper,
     Input,
     Page,
-    PageActionBar,
     PageBlock,
     PageLayout,
     PageTitle,
     PasswordInput,
-    Switch,
 } from '@vendure/dashboard';
 import type { ResultOf } from '@/gql';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,7 +30,6 @@ import { AkeneoSyncSettingsBlock } from './akeneo-sync-settings-block';
 
 const pageId = 'akeneo-settings';
 const queryKey = ['akeneoConnectionSettings'];
-const permission = 'ManageAkeneoSync';
 
 type Settings = NonNullable<ResultOf<typeof akeneoSettingsQuery>['akeneoConnectionSettings']>;
 type TestResult = ResultOf<typeof validateAkeneoCredentialsMutation>['validateAkeneoCredentials'];
@@ -44,7 +40,6 @@ interface FormValues {
     username: string;
     secret: string;
     password: string;
-    enabled: boolean;
 }
 
 function toFormValues(settings: Settings | null | undefined): FormValues {
@@ -55,7 +50,6 @@ function toFormValues(settings: Settings | null | undefined): FormValues {
         // Secrets are write-only: the field stays empty and blank means "keep the stored value".
         secret: '',
         password: '',
-        enabled: settings?.enabled ?? true,
     };
 }
 
@@ -89,15 +83,30 @@ export function AkeneoSettingsPage() {
                     username: values.username,
                     secret: values.secret || undefined,
                     password: values.password || undefined,
-                    enabled: values.enabled,
                 },
             }),
-        onSuccess: result => {
+        onSuccess: async result => {
             queryClient.setQueryData(queryKey, {
                 akeneoConnectionSettings: result.saveAkeneoConnectionSettings,
             });
             setTestResult(null);
-            toast.success('Akeneo connection saved');
+            // Saving resets the status to untested, so verify the stored credentials right away
+            try {
+                const { validateAkeneoCredentials: outcome } = await api.mutate(
+                    validateAkeneoCredentialsMutation,
+                    {},
+                );
+                await queryClient.invalidateQueries({ queryKey });
+                if (outcome.valid) toast.success('Akeneo connection saved and verified');
+                else
+                    toast.error('Saved, but the connection failed', {
+                        description: outcome.message ?? undefined,
+                    });
+            } catch (err) {
+                toast.warning('Akeneo connection saved, but could not be tested', {
+                    description: errorMessage(err),
+                });
+            }
         },
         onError: err => toast.error('Could not save Akeneo connection', { description: errorMessage(err) }),
     });
@@ -126,6 +135,8 @@ export function AkeneoSettingsPage() {
 
     const submitHandler = form.handleSubmit(values => saveMutation.mutate(values));
     const busy = saveMutation.isPending || testMutation.isPending;
+    // Shared so the sync button can wait until sync settings are saved
+    const [syncSettingsDirty, setSyncSettingsDirty] = useState(false);
 
     if (error) {
         return (
@@ -146,23 +157,6 @@ export function AkeneoSettingsPage() {
     return (
         <Page pageId={pageId} form={form} submitHandler={submitHandler}>
             <PageTitle>Akeneo Sync</PageTitle>
-            <PageActionBar>
-                <ActionBarItem itemId="test-button" requiresPermission={[permission]}>
-                    <Button
-                        type="button"
-                        variant="outline"
-                        disabled={busy || isLoading}
-                        onClick={() => testMutation.mutate(form.getValues())}
-                    >
-                        {testMutation.isPending ? 'Testing…' : 'Test connection'}
-                    </Button>
-                </ActionBarItem>
-                <ActionBarItem itemId="save-button" requiresPermission={[permission]}>
-                    <Button type="submit" disabled={busy || isLoading || !form.formState.isDirty}>
-                        {saveMutation.isPending ? 'Saving…' : isNew ? 'Create' : 'Save'}
-                    </Button>
-                </ActionBarItem>
-            </PageActionBar>
             <PageLayout>
                 <PageBlock column="main" blockId="connection" title="Connection">
                     <DetailFormGrid>
@@ -228,26 +222,36 @@ export function AkeneoSettingsPage() {
                             )}
                         />
                     </DetailFormGrid>
+                    <div className="mt-4 flex gap-2">
+                        <Button type="submit" disabled={busy || isLoading || !form.formState.isDirty}>
+                            {saveMutation.isPending
+                                ? 'Saving…'
+                                : isNew
+                                  ? 'Create connection'
+                                  : 'Save connection'}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={busy || isLoading}
+                            onClick={() => testMutation.mutate(form.getValues())}
+                        >
+                            {testMutation.isPending ? 'Testing…' : 'Test connection'}
+                        </Button>
+                    </div>
                 </PageBlock>
                 <PageBlock column="main" blockId="sync-settings" title="Sync settings">
-                    <AkeneoSyncSettingsBlock settings={settings} queryKey={queryKey} />
+                    <AkeneoSyncSettingsBlock
+                        settings={settings}
+                        queryKey={queryKey}
+                        onDirtyChange={setSyncSettingsDirty}
+                    />
                 </PageBlock>
                 <PageBlock column="side" blockId="status" title="Status">
                     <ConnectionStatus settings={settings} testResult={testResult} />
                 </PageBlock>
-                <PageBlock column="side" blockId="sync" title="Sync">
-                    <FormFieldWrapper
-                        control={form.control}
-                        name="enabled"
-                        label="Enabled"
-                        description="When off, no catalog sync runs for this channel."
-                        render={({ field }) => (
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        )}
-                    />
-                </PageBlock>
                 <PageBlock column="side" blockId="category-sync" title="Category sync">
-                    <AkeneoCategorySyncBlock settings={settings} />
+                    <AkeneoCategorySyncBlock settings={settings} hasUnsavedSettings={syncSettingsDirty} />
                 </PageBlock>
             </PageLayout>
         </Page>

@@ -43,6 +43,7 @@ export interface SaveAkeneoSyncSettingsInput {
     localeMapping: AkeneoLocaleMapping[];
     categoryTreeCodes: string[];
     includeCategoryRoot: boolean;
+    enabled: boolean;
 }
 
 export interface AkeneoChannelOption {

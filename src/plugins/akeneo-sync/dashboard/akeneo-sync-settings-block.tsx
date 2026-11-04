@@ -12,12 +12,6 @@ import {
     SelectTrigger,
     SelectValue,
     Switch,
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
 } from '@vendure/dashboard';
 import type { ResultOf } from '@/gql';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,6 +37,7 @@ interface SyncValues {
     mapping: Partial<Record<LanguageCode, string>>;
     trees: string[];
     includeRoot: boolean;
+    enabled: boolean;
 }
 
 function toValues(settings: Settings): SyncValues {
@@ -51,6 +46,7 @@ function toValues(settings: Settings): SyncValues {
         mapping: Object.fromEntries(settings.localeMapping.map(m => [m.languageCode, m.locale])),
         trees: settings.categoryTreeCodes,
         includeRoot: settings.includeCategoryRoot,
+        enabled: settings.enabled,
     };
 }
 
@@ -58,23 +54,36 @@ function errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : 'Unknown error';
 }
 
-export function AkeneoSyncSettingsBlock({
-    settings,
-    queryKey,
-}: Readonly<{ settings: Settings | null | undefined; queryKey: string[] }>) {
+interface BlockProps {
+    settings: Settings | null | undefined;
+    queryKey: string[];
+    /** Reports unsaved changes, so other blocks can wait for them to be saved. */
+    onDirtyChange: (dirty: boolean) => void;
+}
+
+export function AkeneoSyncSettingsBlock({ settings, ...props }: Readonly<BlockProps>) {
     if (!settings) {
         return <p className="text-sm text-muted-foreground">Save the connection first.</p>;
     }
     // Remount when the instance changes, so options and values start fresh
-    return <SyncSettingsForm key={settings.baseUrl} settings={settings} queryKey={queryKey} />;
+    return <SyncSettingsForm key={settings.baseUrl} settings={settings} {...props} />;
 }
 
-function SyncSettingsForm({ settings, queryKey }: Readonly<{ settings: Settings; queryKey: string[] }>) {
+function SyncSettingsForm({
+    settings,
+    queryKey,
+    onDirtyChange,
+}: Readonly<Omit<BlockProps, 'settings'> & { settings: Settings }>) {
     const queryClient = useQueryClient();
     const [values, setValues] = useState(() => toValues(settings));
     const saved = useMemo(() => toValues(settings), [settings]);
+    const dirty = JSON.stringify(values) !== JSON.stringify(saved);
 
     useEffect(() => setValues(toValues(settings)), [settings]);
+    useEffect(() => {
+        onDirtyChange(dirty);
+        return () => onDirtyChange(false);
+    }, [dirty, onDirtyChange]);
 
     const options = useQuery({
         queryKey: ['akeneoSyncOptions', settings.baseUrl],
@@ -113,6 +122,7 @@ function SyncSettingsForm({ settings, queryKey }: Readonly<{ settings: Settings;
                     ),
                     categoryTreeCodes: v.trees,
                     includeCategoryRoot: v.includeRoot,
+                    enabled: v.enabled,
                 },
             }),
         onSuccess: result => {
@@ -134,131 +144,144 @@ function SyncSettingsForm({ settings, queryKey }: Readonly<{ settings: Settings;
         return <p className="text-sm text-muted-foreground">Loading options from Akeneo…</p>;
     }
 
-    const dirty = JSON.stringify(values) !== JSON.stringify(saved);
     const defaultUnmapped = !!defaultLanguage && !values.mapping[defaultLanguage];
     const treeItems = trees.map(tree => {
         const suffix = tree.code === channel?.categoryTree ? ' · channel tree' : '';
         return { value: tree.code, label: `${tree.label} (${tree.code})${suffix}` };
     });
 
-    return (
-        <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
-                <Label>Akeneo channel</Label>
-                <Select
-                    items={Object.fromEntries(channels.map(c => [c.code, `${c.label} (${c.categoryTree})`]))}
-                    value={values.channelCode || null}
-                    onValueChange={v => v && void changeChannel(v)}
-                >
-                    <SelectTrigger className="w-full max-w-md">
-                        <SelectValue placeholder="Select a channel" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {channels.map(c => (
-                            <SelectItem key={c.code} value={c.code}>
-                                {c.label} ({c.categoryTree})
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <p className="text-sm text-muted-foreground">
-                    Product values, locales and currencies are read from this channel.
-                </p>
-            </div>
+    const setMapping = (lang: LanguageCode, value: string | null) =>
+        setValues(v => ({
+            ...v,
+            mapping: { ...v.mapping, [lang]: value && value !== NOT_MAPPED ? value : undefined },
+        }));
 
-            {channel && (
-                <div className="flex flex-col gap-2">
-                    <Label>Locale mapping</Label>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Vendure language</TableHead>
-                                <TableHead>Akeneo locale</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+    return (
+        // This block sits inside the connection form; keep Enter in its inputs from submitting it
+        <div
+            onKeyDown={e => {
+                if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault();
+            }}
+        >
+            <Section title="Sync" description="When off, no catalog sync runs for this channel.">
+                <label className="flex items-center gap-3 text-sm font-medium">
+                    <Switch
+                        checked={values.enabled}
+                        onCheckedChange={enabled => setValues(v => ({ ...v, enabled }))}
+                    />
+                    Sync enabled
+                </label>
+            </Section>
+
+            <Section
+                title="Source"
+                description="Where product data is read from, and which Akeneo locale feeds each Vendure language. Unmapped languages are not synced."
+            >
+                <Field label="Akeneo channel">
+                    <Select
+                        items={Object.fromEntries(
+                            channels.map(c => [c.code, `${c.label} (${c.categoryTree})`]),
+                        )}
+                        value={values.channelCode || null}
+                        onValueChange={v => v && void changeChannel(v)}
+                    >
+                        <SelectTrigger className="w-full max-w-sm">
+                            <SelectValue placeholder="Select a channel" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {channels.map(c => (
+                                <SelectItem key={c.code} value={c.code}>
+                                    {c.label} ({c.categoryTree})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </Field>
+
+                {channel && (
+                    <Field
+                        label="Locale mapping"
+                        hint="Suggested when you pick a channel; picking another channel replaces it."
+                    >
+                        <div className="flex flex-col gap-2">
                             {languages.map(lang => (
-                                <TableRow key={lang}>
-                                    <TableCell>
+                                <div key={lang} className="flex items-center gap-3">
+                                    <span className="w-28 text-sm">
                                         {lang}
                                         {lang === defaultLanguage && (
-                                            <span className="text-muted-foreground"> (default)</span>
+                                            <span className="text-muted-foreground"> · default</span>
                                         )}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Select
-                                            items={{
-                                                [NOT_MAPPED]: 'Not mapped',
-                                                ...Object.fromEntries(channel.locales.map(l => [l, l])),
-                                            }}
-                                            value={values.mapping[lang] ?? NOT_MAPPED}
-                                            onValueChange={v =>
-                                                setValues(s => ({
-                                                    ...s,
-                                                    mapping: {
-                                                        ...s.mapping,
-                                                        [lang]: v && v !== NOT_MAPPED ? v : undefined,
-                                                    },
-                                                }))
-                                            }
+                                    </span>
+                                    <span className="text-muted-foreground" aria-hidden>
+                                        →
+                                    </span>
+                                    <Select
+                                        items={{
+                                            [NOT_MAPPED]: 'Not mapped',
+                                            ...Object.fromEntries(channel.locales.map(l => [l, l])),
+                                        }}
+                                        value={values.mapping[lang] ?? NOT_MAPPED}
+                                        onValueChange={v => setMapping(lang, v)}
+                                    >
+                                        <SelectTrigger
+                                            className="w-40"
+                                            aria-label={`Akeneo locale for ${lang}`}
                                         >
-                                            <SelectTrigger className="w-48">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value={NOT_MAPPED}>Not mapped</SelectItem>
-                                                {channel.locales.map(l => (
-                                                    <SelectItem key={l} value={l}>
-                                                        {l}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </TableCell>
-                                </TableRow>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value={NOT_MAPPED}>Not mapped</SelectItem>
+                                            {channel.locales.map(l => (
+                                                <SelectItem key={l} value={l}>
+                                                    {l}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             ))}
-                        </TableBody>
-                    </Table>
-                    {defaultUnmapped && (
-                        <p className="text-sm text-destructive">
-                            Map a locale to the default language before syncing.
-                        </p>
-                    )}
-                </div>
-            )}
+                            {defaultUnmapped && (
+                                <p className="text-sm text-destructive">
+                                    Map a locale to the default language before syncing.
+                                </p>
+                            )}
+                        </div>
+                    </Field>
+                )}
+            </Section>
 
-            <div className="flex flex-col gap-2">
-                <Label>Category trees to sync as collections</Label>
-                <MultiSelect
-                    multiple
-                    showSearch
-                    items={treeItems}
-                    value={values.trees}
-                    onChange={trees => setValues(v => ({ ...v, trees }))}
-                    placeholder="No trees selected"
-                    searchPlaceholder="Search trees…"
-                    className="w-full max-w-md"
-                />
-                <p className="text-sm text-muted-foreground">
-                    Leave empty to manage collections in Vendure only. Collections from trees you remove later
-                    are kept.
-                </p>
-            </div>
+            <Section
+                title="Collections"
+                description="Which Akeneo category trees become Vendure collections. Leave empty to manage collections in Vendure only. Collections from trees you remove later are kept."
+            >
+                <Field label="Category trees">
+                    <MultiSelect
+                        multiple
+                        showSearch
+                        items={treeItems}
+                        value={values.trees}
+                        onChange={trees => setValues(v => ({ ...v, trees }))}
+                        placeholder="No trees selected"
+                        searchPlaceholder="Search trees…"
+                        className="w-full max-w-sm"
+                    />
+                </Field>
+                <label className="flex items-start gap-3">
+                    <Switch
+                        checked={values.includeRoot}
+                        onCheckedChange={includeRoot => setValues(v => ({ ...v, includeRoot }))}
+                    />
+                    <span className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">Create root category as a collection</span>
+                        <span className="text-sm text-muted-foreground">
+                            When off, each tree's top categories become top-level collections.
+                        </span>
+                    </span>
+                </label>
+            </Section>
 
-            <div className="flex items-start gap-3">
-                <Switch
-                    checked={values.includeRoot}
-                    onCheckedChange={includeRoot => setValues(v => ({ ...v, includeRoot }))}
-                />
-                <div className="flex flex-col gap-1">
-                    <Label>Create root category as a collection</Label>
-                    <p className="text-sm text-muted-foreground">
-                        When off, the children of each tree root become top-level collections.
-                    </p>
-                </div>
-            </div>
-
-            <div>
+            <div className="flex items-center justify-end gap-3 border-t pt-4">
+                {dirty && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
                 <Button
                     type="button"
                     disabled={!dirty || !values.channelCode || saveMutation.isPending}
@@ -267,6 +290,37 @@ function SyncSettingsForm({ settings, queryKey }: Readonly<{ settings: Settings;
                     {saveMutation.isPending ? 'Saving…' : 'Save sync settings'}
                 </Button>
             </div>
+        </div>
+    );
+}
+
+/** A settings row: what it is and why on the left, the controls on the right. */
+function Section({
+    title,
+    description,
+    children,
+}: Readonly<{ title: string; description: string; children: React.ReactNode }>) {
+    return (
+        <section className="grid gap-4 border-t py-6 first:border-t-0 first:pt-0 md:grid-cols-3 md:gap-8">
+            <div>
+                <h3 className="text-sm font-semibold">{title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            </div>
+            <div className="flex flex-col gap-5 md:col-span-2">{children}</div>
+        </section>
+    );
+}
+
+function Field({
+    label,
+    hint,
+    children,
+}: Readonly<{ label: string; hint?: string; children: React.ReactNode }>) {
+    return (
+        <div className="flex flex-col gap-2">
+            <Label>{label}</Label>
+            {children}
+            {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
     );
 }

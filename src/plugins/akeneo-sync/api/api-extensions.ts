@@ -86,6 +86,8 @@ export const adminApiExtensions = gql`
         localeMapping: [AkeneoLocaleMappingInput!]!
         categoryTreeCodes: [String!]!
         includeCategoryRoot: Boolean!
+        "When false, no catalog sync runs for this channel"
+        enabled: Boolean!
     }
 
     type AkeneoCredentialValidationResult {

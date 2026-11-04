@@ -27,15 +27,19 @@ function errorMessage(err: unknown): string {
 }
 
 /** Why the sync can't start yet, or null when it can. */
-function blockedReason(settings: Settings | null | undefined): string | null {
+function blockedReason(settings: Settings | null | undefined, hasUnsavedSettings: boolean): string | null {
     if (!settings) return 'Save the connection first.';
+    if (hasUnsavedSettings) return 'Save the sync settings first.';
     if (!settings.enabled) return 'Sync is disabled for this channel.';
     if (!settings.channelCode) return 'Select an Akeneo channel in the sync settings.';
     if (!settings.categoryTreeCodes.length) return 'Select at least one category tree to sync.';
     return null;
 }
 
-export function AkeneoCategorySyncBlock({ settings }: Readonly<{ settings: Settings | null | undefined }>) {
+export function AkeneoCategorySyncBlock({
+    settings,
+    hasUnsavedSettings,
+}: Readonly<{ settings: Settings | null | undefined; hasUnsavedSettings: boolean }>) {
     const queryClient = useQueryClient();
     const { data, error } = useQuery({
         queryKey: statusQueryKey,
@@ -58,7 +62,7 @@ export function AkeneoCategorySyncBlock({ settings }: Readonly<{ settings: Setti
         onError: err => toast.error('Could not start category sync', { description: errorMessage(err) }),
     });
 
-    const reason = blockedReason(settings);
+    const reason = blockedReason(settings, hasUnsavedSettings);
     return (
         <div className="flex flex-col gap-3 text-sm">
             {status ? (
@@ -100,11 +104,21 @@ function RunSummary({ status }: Readonly<{ status: Status }>) {
                     Syncing {status.currentTree}, {status.pages} page(s) done
                 </span>
             )}
-            <span>
-                {status.categories} categories: {status.created} created, {status.updated} updated,{' '}
-                {status.unchanged} unchanged
-            </span>
+            <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
+                <Count label="Created" value={status.created} />
+                <Count label="Updated" value={status.updated} />
+                <Count label="Unchanged" value={status.unchanged} />
+            </dl>
             {status.error && <span className="text-destructive">{status.error}</span>}
+        </div>
+    );
+}
+
+function Count({ label, value }: Readonly<{ label: string; value: number }>) {
+    return (
+        <div className="rounded-md border px-2 py-1.5">
+            <dd className="text-base font-semibold tabular-nums">{value}</dd>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
         </div>
     );
 }

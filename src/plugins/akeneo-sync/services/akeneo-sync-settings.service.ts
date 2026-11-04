@@ -80,6 +80,7 @@ export class AkeneoSyncSettingsService {
         settings.localeMapping = input.localeMapping;
         settings.categoryTreeCodes = treeCodes;
         settings.includeCategoryRoot = input.includeCategoryRoot;
+        settings.enabled = input.enabled;
         return this.connection.getRepository(ctx, AkeneoConnectionSettings).save(settings);
     }
 
