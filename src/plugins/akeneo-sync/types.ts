@@ -20,7 +20,7 @@ export interface PluginInitOptions {
      */
     allowInsecureBaseUrl?: boolean;
     /**
-     * Timeout for requests made to the Akeneo API while validating credentials.
+     * Timeout for each request made to the Akeneo API (file downloads excluded).
      *
      * @default 10000
      */

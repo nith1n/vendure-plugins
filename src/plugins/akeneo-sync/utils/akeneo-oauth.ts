@@ -79,11 +79,11 @@ export async function requestAkeneoToken(
     };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function firstString(value: unknown, keys: string[]): string | undefined {
+export function firstString(value: unknown, keys: string[]): string | undefined {
     if (!isRecord(value)) return undefined;
     for (const key of keys) {
         const v = value[key];
@@ -93,7 +93,7 @@ function firstString(value: unknown, keys: string[]): string | undefined {
 }
 
 /** fetch() wraps socket errors, so the useful code (ENOTFOUND, ECONNREFUSED...) is on `cause`. */
-function describeNetworkError(e: unknown): string {
+export function describeNetworkError(e: unknown): string {
     if (!(e instanceof Error)) return 'unknown error';
     const cause = (e as Error & { cause?: unknown }).cause;
     if (isRecord(cause) && typeof cause.code === 'string') return cause.code;

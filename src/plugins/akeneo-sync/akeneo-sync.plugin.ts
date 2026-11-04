@@ -9,6 +9,7 @@ import { AKENEO_SYNC_PLUGIN_OPTIONS } from './constants';
 import { akeneoCustomFields } from './custom-fields';
 import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.entity';
 import { manageAkeneoSyncPermission } from './permissions';
+import { AkeneoApiService } from './services/akeneo-api.service';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
 import { PluginInitOptions } from './types';
 
@@ -17,6 +18,7 @@ import { PluginInitOptions } from './types';
     providers: [
         { provide: AKENEO_SYNC_PLUGIN_OPTIONS, useFactory: () => AkeneoSyncPlugin.options },
         AkeneoConnectionSettingsService,
+        AkeneoApiService,
     ],
     entities: [AkeneoConnectionSettings],
     adminApiExtensions: {
@@ -31,7 +33,7 @@ import { PluginInitOptions } from './types';
         }
         return config;
     },
-    exports: [AkeneoConnectionSettingsService],
+    exports: [AkeneoConnectionSettingsService, AkeneoApiService],
     dashboard: './dashboard/index.tsx',
     compatibility: '^3.0.0',
 })

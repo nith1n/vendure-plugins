@@ -7,7 +7,7 @@ import {
     UserInputError,
 } from '@vendure/core';
 
-import { AKENEO_SYNC_PLUGIN_OPTIONS, loggerCtx } from '../constants';
+import { AKENEO_SYNC_PLUGIN_OPTIONS, DEFAULT_REQUEST_TIMEOUT_MS, loggerCtx } from '../constants';
 import {
     AkeneoConnectionSettings,
     AkeneoCredentialStatus,
@@ -22,7 +22,6 @@ import {
 import { requestAkeneoToken } from '../utils/akeneo-oauth';
 import { SecretCipher } from '../utils/secret-cipher';
 
-const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_FIELD_LENGTH = 255;
 
 @Injectable()
@@ -140,7 +139,7 @@ export class AkeneoConnectionSettingsService {
 
         const result = await requestAkeneoToken(
             credentials,
-            this.options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+            this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
         );
         const testedAt = new Date();
         const status = result.ok ? AkeneoCredentialStatus.VALID : AkeneoCredentialStatus.INVALID;
