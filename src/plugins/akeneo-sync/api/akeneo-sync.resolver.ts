@@ -3,7 +3,7 @@ import { Allow, Ctx, RequestContext, Transaction } from '@vendure/core';
 
 import { AkeneoConnectionSettings, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
 import { manageAkeneoSyncPermission } from '../permissions';
-import { AkeneoCategorySyncService } from '../services/akeneo-category-sync.service';
+import { AkeneoCategorySyncService, CategorySyncStatus } from '../services/akeneo-category-sync.service';
 import { AkeneoSyncSettingsService } from '../services/akeneo-sync-settings.service';
 import { AkeneoCategoryTreeOption, AkeneoChannelOption, SaveAkeneoSyncSettingsInput } from '../types';
 
@@ -33,6 +33,12 @@ export class AkeneoSyncAdminResolver {
         @Args() args: { channelCode: string },
     ): Promise<AkeneoLocaleMapping[]> {
         return this.syncSettingsService.suggestLocaleMapping(ctx, args.channelCode);
+    }
+
+    @Query()
+    @Allow(manageAkeneoSyncPermission.Permission)
+    akeneoCategorySyncStatus(@Ctx() ctx: RequestContext): Promise<CategorySyncStatus | null> {
+        return this.categorySyncService.getStatus(ctx);
     }
 
     @Mutation()

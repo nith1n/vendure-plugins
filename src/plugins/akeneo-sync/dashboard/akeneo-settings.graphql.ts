@@ -96,3 +96,30 @@ export const saveAkeneoSyncSettingsMutation = graphql(
     `,
     [akeneoSettingsFragment],
 );
+
+export const akeneoCategorySyncStatusQuery = graphql(`
+    query AkeneoCategorySyncStatus {
+        akeneoCategorySyncStatus {
+            runId
+            state
+            trees
+            currentTree
+            pages
+            categories
+            created
+            updated
+            unchanged
+            startedAt
+            finishedAt
+            error
+        }
+    }
+`);
+
+export const startAkeneoCategorySyncMutation = graphql(`
+    mutation StartAkeneoCategorySync {
+        startAkeneoCategorySync {
+            id
+        }
+    }
+`);

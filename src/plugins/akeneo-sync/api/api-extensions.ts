@@ -52,6 +52,30 @@ export const adminApiExtensions = gql`
         label: String!
     }
 
+    enum AkeneoSyncRunState {
+        RUNNING
+        COMPLETED
+        FAILED
+        CANCELLED
+    }
+
+    "Latest category sync run of the active channel"
+    type AkeneoCategorySyncStatus {
+        runId: String!
+        state: AkeneoSyncRunState!
+        trees: [String!]!
+        "Tree being synced while the run is going"
+        currentTree: String
+        pages: Int!
+        categories: Int!
+        created: Int!
+        updated: Int!
+        unchanged: Int!
+        startedAt: DateTime!
+        finishedAt: DateTime
+        error: String
+    }
+
     input AkeneoLocaleMappingInput {
         languageCode: LanguageCode!
         locale: String!
@@ -107,6 +131,8 @@ export const adminApiExtensions = gql`
         akeneoCategoryTrees: [AkeneoCategoryTreeOption!]!
         "Suggested locale for each language of the active channel"
         akeneoSuggestedLocaleMapping(channelCode: String!): [AkeneoLocaleMapping!]!
+        "Null if no category sync has run for this channel yet"
+        akeneoCategorySyncStatus: AkeneoCategorySyncStatus
     }
 
     extend type Mutation {

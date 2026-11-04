@@ -1,10 +1,13 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { LanguageCode } from '@vendure/common/lib/generated-types';
+import { JobFilterParameter, JobState, LanguageCode, SortOrder } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
+    ConfigService,
     ID,
     idsAreEqual,
+    isInspectableJobQueueStrategy,
+    Job,
     JobQueue,
     JobQueueService,
     Logger,
@@ -13,6 +16,7 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
+import { randomUUID } from 'crypto';
 import { In } from 'typeorm';
 
 import { AkeneoApiError } from '../akeneo/akeneo-api-client';
@@ -23,8 +27,23 @@ import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.enti
 import { AkeneoApiService } from './akeneo-api.service';
 import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.service';
 
+// Type aliases (not interfaces) so they satisfy the job queue's JsonCompatible data constraint
+type CategorySyncTotals = {
+    pages: number;
+    categories: number;
+    created: number;
+    updated: number;
+    unchanged: number;
+};
+
 interface CategorySyncJobData {
     ctx: SerializedRequestContext;
+    channelId: string;
+    /** Shared by all page jobs of one run. */
+    runId: string;
+    startedAt: string;
+    /** Totals of the pages before this one, carried forward so the latest job describes the run. */
+    totals: CategorySyncTotals;
     /** Settings snapshot taken when the run starts, so a run stays consistent if they change. */
     trees: string[];
     includeRoot: boolean;
@@ -45,6 +64,20 @@ export interface CategorySyncPageResult {
     /** Parents referenced before their own page was synced; filled in when it arrives. */
     placeholders: number;
     hasNextPage: boolean;
+    /** Totals of the run up to and including this page. */
+    totals: CategorySyncTotals;
+}
+
+export type CategorySyncRunState = 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+
+export interface CategorySyncStatus extends CategorySyncTotals {
+    runId: string;
+    state: CategorySyncRunState;
+    trees: string[];
+    currentTree: string | null;
+    startedAt: Date;
+    finishedAt: Date | null;
+    error: string | null;
 }
 
 interface ExistingCollection {
@@ -59,7 +92,12 @@ interface TreeContext {
     localeMapping: AkeneoLocaleMapping[];
 }
 
+const QUEUE_NAME = 'akeneo-category-sync';
 const JOB_RETRIES = 3;
+const ACTIVE_STATES = [JobState.PENDING, JobState.RUNNING, JobState.RETRYING];
+/** How many recent jobs of the queue to look through for this channel's latest run. */
+const STATUS_LOOKBACK = 50;
+const EMPTY_TOTALS: CategorySyncTotals = { pages: 0, categories: 0, created: 0, updated: 0, unchanged: 0 };
 
 /**
  * Syncs the selected Akeneo category trees to Vendure Collections, one Akeneo page per job.
@@ -81,11 +119,12 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         private jobQueueService: JobQueueService,
         private akeneoApiService: AkeneoApiService,
         private connectionSettingsService: AkeneoConnectionSettingsService,
+        private configService: ConfigService,
     ) {}
 
     async onModuleInit() {
         this.queue = await this.jobQueueService.createQueue({
-            name: 'akeneo-category-sync',
+            name: QUEUE_NAME,
             process: job => this.syncPage(job.data),
         });
     }
@@ -102,9 +141,16 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         if (!settings.localeMapping.some(m => m.languageCode === defaultLanguage)) {
             throw new UserInputError(`Map an Akeneo locale to the default language "${defaultLanguage}"`);
         }
+        const active = await this.findChannelJobs(ctx, { state: { in: ACTIVE_STATES } });
+        if (active.length) throw new UserInputError('A category sync is already running for this channel');
+
         return this.queue.add(
             {
                 ctx: ctx.serialize(),
+                channelId: String(ctx.channelId),
+                runId: randomUUID(),
+                startedAt: new Date().toISOString(),
+                totals: EMPTY_TOTALS,
                 trees: settings.categoryTreeCodes,
                 includeRoot: settings.includeCategoryRoot,
                 localeMapping: settings.localeMapping,
@@ -139,13 +185,20 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             this.upsertCategories(txCtx, categories, tree),
         );
 
+        const totals: CategorySyncTotals = {
+            pages: data.totals.pages + 1,
+            categories: data.totals.categories + categories.length,
+            created: data.totals.created + counts.created,
+            updated: data.totals.updated + counts.updated,
+            unchanged: data.totals.unchanged + counts.unchanged,
+        };
         const next: Partial<CategorySyncJobData> | undefined = page.next
             ? { cursor: page.next, page: data.page + 1 }
             : data.treeIndex + 1 < data.trees.length
               ? { treeIndex: data.treeIndex + 1, cursor: null, page: 1 }
               : undefined;
         if (next) {
-            await this.queue.add({ ...data, ...next }, { retries: JOB_RETRIES });
+            await this.queue.add({ ...data, ...next, totals }, { retries: JOB_RETRIES });
         } else {
             Logger.info(`Akeneo category sync finished (${data.trees.join(', ')})`, loggerCtx);
         }
@@ -155,7 +208,53 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             categories: categories.length,
             ...counts,
             hasNextPage: !!page.next,
+            totals,
         };
+    }
+
+    /**
+     * Status of this channel's latest run. Each page job carries the run's totals forward, so
+     * the newest job of the run describes all of it: while a page is queued or running the run
+     * is still going, otherwise the newest job's outcome is the run's outcome.
+     */
+    async getStatus(ctx: RequestContext): Promise<CategorySyncStatus | null> {
+        const [latest] = await this.findChannelJobs(ctx);
+        if (!latest) return null;
+        const data = latest.data;
+        const result = latest.result as CategorySyncPageResult | undefined;
+        const active = ACTIVE_STATES.includes(latest.state);
+        const state: CategorySyncRunState = active
+            ? 'RUNNING'
+            : latest.state === JobState.COMPLETED
+              ? 'COMPLETED'
+              : latest.state === JobState.CANCELLED
+                ? 'CANCELLED'
+                : 'FAILED';
+        return {
+            runId: data.runId,
+            state,
+            trees: data.trees,
+            currentTree: active ? data.trees[data.treeIndex] : null,
+            ...(result?.totals ?? data.totals),
+            startedAt: new Date(data.startedAt),
+            finishedAt: active ? null : (latest.settledAt ?? null),
+            error: state === 'FAILED' ? errorText(latest.error) : null,
+        };
+    }
+
+    /** Newest first. Jobs from before runs were tracked (no `runId`) are ignored. */
+    private async findChannelJobs(ctx: RequestContext, filter: JobFilterParameter = {}) {
+        const strategy = this.configService.jobQueueOptions.jobQueueStrategy;
+        // Without an inspectable strategy there is no way to list jobs; report no runs
+        if (!isInspectableJobQueueStrategy(strategy)) return [];
+        const { items } = await strategy.findMany({
+            filter: { queueName: { eq: QUEUE_NAME }, ...filter },
+            sort: { createdAt: SortOrder.DESC },
+            take: STATUS_LOOKBACK,
+        });
+        return items
+            .map(job => job as Job<CategorySyncJobData>)
+            .filter(job => job.data.runId && job.data.channelId === String(ctx.channelId));
     }
 
     private async upsertCategories(ctx: RequestContext, categories: AkeneoCategory[], tree: TreeContext) {
@@ -306,4 +405,10 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             .findOneOrFail({ where: { isRoot: true }, select: ['id'] });
         return root.id;
     }
+}
+
+function errorText(error: unknown): string {
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message;
+    return error ? JSON.stringify(error) : 'Unknown error';
 }

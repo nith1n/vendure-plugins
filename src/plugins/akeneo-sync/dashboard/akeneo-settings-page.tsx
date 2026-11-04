@@ -28,6 +28,7 @@ import {
     saveAkeneoSettingsMutation,
     validateAkeneoCredentialsMutation,
 } from './akeneo-settings.graphql';
+import { AkeneoCategorySyncBlock } from './akeneo-category-sync-block';
 import { AkeneoSyncSettingsBlock } from './akeneo-sync-settings-block';
 
 const pageId = 'akeneo-settings';
@@ -244,6 +245,9 @@ export function AkeneoSettingsPage() {
                             <Switch checked={field.value} onCheckedChange={field.onChange} />
                         )}
                     />
+                </PageBlock>
+                <PageBlock column="side" blockId="category-sync" title="Category sync">
+                    <AkeneoCategorySyncBlock settings={settings} />
                 </PageBlock>
             </PageLayout>
         </Page>
