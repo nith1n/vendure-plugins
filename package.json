@@ -20,12 +20,17 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@nestjs/common": "12.3.2",
+    "@nestjs/graphql": "14.0.3",
     "@vendure/asset-server-plugin": "3.8.1",
+    "@vendure/common": "3.8.1",
     "@vendure/core": "3.8.1",
     "@vendure/dashboard": "3.8.1",
     "@vendure/email-plugin": "3.8.1",
     "@vendure/graphiql-plugin": "3.8.1",
     "dotenv": "18.0.9",
+    "graphql": "16.14.2",
+    "graphql-tag": "2.12.7",
     "pg": "8.23.1",
     "typeorm": "^0.3.31"
   },

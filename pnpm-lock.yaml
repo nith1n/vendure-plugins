@@ -8,9 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@nestjs/common':
+        specifier: 12.3.2
+        version: 12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
+      '@nestjs/graphql':
+        specifier: 14.0.3
+        version: 14.0.3(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.3.2)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@21.0.1)(typescript@5.8.2)
       '@vendure/asset-server-plugin':
         specifier: 3.8.1
         version: 3.8.1(@types/node@26.6.6)(supports-color@7.2.0)
+      '@vendure/common':
+        specifier: 3.8.1
+        version: 3.8.1
       '@vendure/core':
         specifier: 3.8.1
         version: 3.8.1(pg@8.23.1)(supports-color@7.2.0)(ts-morph@21.0.1)(ts-node@10.9.2(@types/node@26.6.6)(typescript@5.8.2))(typescript@5.8.2)
@@ -26,6 +35,12 @@ importers:
       dotenv:
         specifier: 18.0.9
         version: 18.0.9
+      graphql:
+        specifier: 16.14.2
+        version: 16.14.2
+      graphql-tag:
+        specifier: 2.12.7
+        version: 2.12.7(graphql@16.14.2)
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -6455,7 +6470,7 @@ snapshots:
 
   '@graphql-tools/schema@10.1.1(graphql@16.14.2)':
     dependencies:
-      '@graphql-tools/merge': 9.2.8(graphql@16.14.2)
+      '@graphql-tools/merge': 9.2.4(graphql@16.14.2)
       '@graphql-tools/utils': 12.0.1(graphql@16.14.2)
       graphql: 16.14.2
       tslib: 2.8.1

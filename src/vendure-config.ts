@@ -11,6 +11,7 @@ import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import path from 'path';
+import { AkeneoSyncPlugin } from './plugins/akeneo-sync/akeneo-sync.plugin';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 // PORT wins because hosting platforms inject it into the environment at runtime, and that
@@ -118,6 +119,10 @@ export const config: VendureConfig = {
         DashboardPlugin.init({
             route: 'dashboard',
             appDir: IS_DEV ? path.join(__dirname, '../dist/dashboard') : path.join(__dirname, 'dashboard'),
+        }),
+        AkeneoSyncPlugin.init({
+            encryptionKey: process.env.AKENEO_ENCRYPTION_KEY,
+            allowInsecureBaseUrl: IS_DEV,
         }),
     ],
 };
