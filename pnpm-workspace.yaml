@@ -1,0 +1,16 @@
+# pnpm v10 build-script allowlist
+onlyBuiltDependencies:
+    - bcrypt
+    - esbuild
+    - sharp
+
+# pnpm v11 build-script allowlist
+allowBuilds:
+    bcrypt: true
+    esbuild: true
+    sharp: true
+
+# pnpm v11 fails the install when a dependency has build scripts not covered by
+# allowBuilds. With this off, uncovered scripts are skipped with a warning instead
+# (as in pnpm v10); the packages concerned work without their build scripts.
+strictDepBuilds: false

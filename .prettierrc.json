@@ -1,0 +1,15 @@
+{
+  "printWidth": 110,
+  "tabWidth": 4,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "arrowParens": "avoid",
+  "overrides": [
+    {
+      "files": "*.{json,md}",
+      "options": {
+        "tabWidth": 2
+      }
+    }
+  ]
+}
