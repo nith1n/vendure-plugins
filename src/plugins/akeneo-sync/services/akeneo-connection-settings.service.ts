@@ -76,6 +76,12 @@ export class AkeneoConnectionSettingsService {
             !!secret ||
             !!password;
 
+        if (existing && existing.baseUrl !== baseUrl) {
+            // Channel, locale and tree codes belong to the previous Akeneo instance
+            settings.channelCode = null;
+            settings.localeMapping = [];
+            settings.categoryTreeCodes = [];
+        }
         settings.baseUrl = baseUrl;
         settings.clientId = clientId;
         settings.username = username;

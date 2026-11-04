@@ -30,6 +30,15 @@ export interface AkeneoListOptions {
     search?: AkeneoSearch;
 }
 
+export interface AkeneoChannel {
+    code: string;
+    labels: AkeneoLabels;
+    /** Code of the root category of the channel's category tree. */
+    category_tree: string;
+    locales: string[];
+    currencies: string[];
+}
+
 export interface AkeneoCategory {
     code: string;
     parent: string | null;

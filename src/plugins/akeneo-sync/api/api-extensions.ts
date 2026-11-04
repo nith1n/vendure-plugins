@@ -24,6 +24,44 @@ export const adminApiExtensions = gql`
         lastValidationStatus: AkeneoCredentialStatus!
         lastValidatedAt: DateTime
         lastValidationError: String
+        "Akeneo channel used for values, locales and currencies"
+        channelCode: String
+        localeMapping: [AkeneoLocaleMapping!]!
+        "Root codes of the Akeneo category trees synced as Collections"
+        categoryTreeCodes: [String!]!
+        "Whether each tree root itself becomes a Collection"
+        includeCategoryRoot: Boolean!
+    }
+
+    "Which Akeneo locale feeds a Vendure language"
+    type AkeneoLocaleMapping {
+        languageCode: LanguageCode!
+        locale: String!
+    }
+
+    type AkeneoChannelOption {
+        code: String!
+        label: String!
+        "Root code of the channel's category tree"
+        categoryTree: String!
+        locales: [String!]!
+    }
+
+    type AkeneoCategoryTreeOption {
+        code: String!
+        label: String!
+    }
+
+    input AkeneoLocaleMappingInput {
+        languageCode: LanguageCode!
+        locale: String!
+    }
+
+    input SaveAkeneoSyncSettingsInput {
+        channelCode: String!
+        localeMapping: [AkeneoLocaleMappingInput!]!
+        categoryTreeCodes: [String!]!
+        includeCategoryRoot: Boolean!
     }
 
     type AkeneoCredentialValidationResult {
@@ -63,13 +101,20 @@ export const adminApiExtensions = gql`
 
     extend type Query {
         akeneoConnectionSettings: AkeneoConnectionSettings
+        "Channels of the connected Akeneo instance, read live"
+        akeneoChannels: [AkeneoChannelOption!]!
+        "Root categories (one per tree) of the connected Akeneo instance, read live"
+        akeneoCategoryTrees: [AkeneoCategoryTreeOption!]!
+        "Suggested locale for each language of the active channel"
+        akeneoSuggestedLocaleMapping(channelCode: String!): [AkeneoLocaleMapping!]!
     }
 
     extend type Mutation {
         saveAkeneoConnectionSettings(input: SaveAkeneoConnectionSettingsInput!): AkeneoConnectionSettings!
         validateAkeneoCredentials(input: ValidateAkeneoCredentialsInput): AkeneoCredentialValidationResult!
         deleteAkeneoConnectionSettings: DeletionResponse!
-        "Queues a sync of all Akeneo categories to Collections, one page per job."
+        saveAkeneoSyncSettings(input: SaveAkeneoSyncSettingsInput!): AkeneoConnectionSettings!
+        "Queues a sync of the selected Akeneo category trees to Collections, one page per job."
         startAkeneoCategorySync: Job!
     }
 `;

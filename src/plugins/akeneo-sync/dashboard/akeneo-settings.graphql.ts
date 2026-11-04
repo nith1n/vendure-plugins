@@ -12,6 +12,13 @@ export const akeneoSettingsFragment = graphql(`
         lastValidationStatus
         lastValidatedAt
         lastValidationError
+        channelCode
+        localeMapping {
+            languageCode
+            locale
+        }
+        categoryTreeCodes
+        includeCategoryRoot
     }
 `);
 
@@ -49,3 +56,43 @@ export const validateAkeneoCredentialsMutation = graphql(`
         }
     }
 `);
+
+export const akeneoSyncOptionsQuery = graphql(`
+    query AkeneoSyncOptions {
+        akeneoChannels {
+            code
+            label
+            categoryTree
+            locales
+        }
+        akeneoCategoryTrees {
+            code
+            label
+        }
+        activeChannel {
+            id
+            defaultLanguageCode
+            availableLanguageCodes
+        }
+    }
+`);
+
+export const akeneoSuggestedLocaleMappingQuery = graphql(`
+    query AkeneoSuggestedLocaleMapping($channelCode: String!) {
+        akeneoSuggestedLocaleMapping(channelCode: $channelCode) {
+            languageCode
+            locale
+        }
+    }
+`);
+
+export const saveAkeneoSyncSettingsMutation = graphql(
+    `
+        mutation SaveAkeneoSyncSettings($input: SaveAkeneoSyncSettingsInput!) {
+            saveAkeneoSyncSettings(input: $input) {
+                ...AkeneoSettings
+            }
+        }
+    `,
+    [akeneoSettingsFragment],
+);

@@ -28,6 +28,7 @@ import {
     saveAkeneoSettingsMutation,
     validateAkeneoCredentialsMutation,
 } from './akeneo-settings.graphql';
+import { AkeneoSyncSettingsBlock } from './akeneo-sync-settings-block';
 
 const pageId = 'akeneo-settings';
 const queryKey = ['akeneoConnectionSettings'];
@@ -226,6 +227,9 @@ export function AkeneoSettingsPage() {
                             )}
                         />
                     </DetailFormGrid>
+                </PageBlock>
+                <PageBlock column="main" blockId="sync-settings" title="Sync settings">
+                    <AkeneoSyncSettingsBlock settings={settings} queryKey={queryKey} />
                 </PageBlock>
                 <PageBlock column="side" blockId="status" title="Status">
                     <ConnectionStatus settings={settings} testResult={testResult} />

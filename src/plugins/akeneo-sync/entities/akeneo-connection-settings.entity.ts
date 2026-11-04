@@ -1,4 +1,4 @@
-import { DeepPartial, EntityId, ID, VendureEntity } from '@vendure/core';
+import { DeepPartial, EntityId, ID, LanguageCode, VendureEntity } from '@vendure/core';
 import { Column, Entity, Index } from 'typeorm';
 
 export enum AkeneoCredentialStatus {
@@ -56,4 +56,26 @@ export class AkeneoConnectionSettings extends VendureEntity {
 
     @Column({ type: 'text', nullable: true })
     lastValidationError: string | null;
+
+    /** Akeneo channel whose values, locales and currencies are used for this Vendure channel. */
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    channelCode: string | null;
+
+    /** Which Akeneo locale feeds each Vendure language. Unmapped languages are not synced. */
+    @Column({ type: 'simple-json', default: '[]' })
+    localeMapping: AkeneoLocaleMapping[];
+
+    /** Root codes of the Akeneo category trees synced as Collections. */
+    @Column({ type: 'simple-json', default: '[]' })
+    categoryTreeCodes: string[];
+
+    /** Create the tree root itself as a Collection, rather than starting at its children. */
+    @Column({ type: 'boolean', default: false })
+    includeCategoryRoot: boolean;
 }
+
+// A type alias (not an interface) so it satisfies the job queue's JsonCompatible data constraint
+export type AkeneoLocaleMapping = {
+    languageCode: LanguageCode;
+    locale: string;
+};

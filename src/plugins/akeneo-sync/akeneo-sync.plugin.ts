@@ -13,6 +13,7 @@ import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
 import { AkeneoCategorySyncService } from './services/akeneo-category-sync.service';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
+import { AkeneoSyncSettingsService } from './services/akeneo-sync-settings.service';
 import { PluginInitOptions } from './types';
 
 @VendurePlugin({
@@ -22,6 +23,7 @@ import { PluginInitOptions } from './types';
         AkeneoConnectionSettingsService,
         AkeneoApiService,
         AkeneoCategorySyncService,
+        AkeneoSyncSettingsService,
     ],
     entities: [AkeneoConnectionSettings],
     adminApiExtensions: {

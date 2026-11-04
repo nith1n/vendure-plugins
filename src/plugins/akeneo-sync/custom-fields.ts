@@ -10,21 +10,25 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     }
     interface CustomCollectionFields {
         akeneoCode: string | null;
+        akeneoChannelId: string | null;
     }
     interface CustomAssetFields {
         akeneoCode: string | null;
     }
 }
 
-const akeneoField = (name: 'akeneoCode' | 'akeneoUuid'): CustomFieldConfig => ({
+const akeneoField = (
+    name: 'akeneoCode' | 'akeneoUuid',
+    options: Pick<CustomFieldConfig, 'unique' | 'index'> = { unique: true },
+): CustomFieldConfig => ({
     name,
     type: 'string',
     label: [{ languageCode: LanguageCode.en, value: name === 'akeneoCode' ? 'Akeneo code' : 'Akeneo UUID' }],
     nullable: true,
     readonly: true,
     public: false,
-    unique: true,
     ui: { tab: 'Akeneo' },
+    ...options,
 });
 
 /**
@@ -36,8 +40,12 @@ export const akeneoCustomFields: CustomFields = {
     // Product models (akeneoCode) and simple products without variants (akeneoUuid)
     Product: [akeneoField('akeneoCode'), akeneoField('akeneoUuid')],
     ProductVariant: [akeneoField('akeneoUuid')],
-    // Category code
-    Collection: [akeneoField('akeneoCode')],
+    // Category code. Each Vendure channel syncs its own Collections, so the code is only unique
+    // per owning channel (new Collections are always also assigned to the default channel).
+    Collection: [
+        akeneoField('akeneoCode', { index: true }),
+        { name: 'akeneoChannelId', type: 'string', nullable: true, internal: true, index: true },
+    ],
     // Asset code
     Asset: [akeneoField('akeneoCode')],
 };

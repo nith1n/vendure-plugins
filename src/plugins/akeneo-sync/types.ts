@@ -1,4 +1,4 @@
-import { AkeneoCredentialStatus } from './entities/akeneo-connection-settings.entity';
+import { AkeneoCredentialStatus, AkeneoLocaleMapping } from './entities/akeneo-connection-settings.entity';
 
 /**
  * @description
@@ -36,6 +36,25 @@ export interface SaveAkeneoConnectionSettingsInput {
     /** Omit (or pass null) to keep the currently stored password. */
     password?: string | null;
     enabled?: boolean | null;
+}
+
+export interface SaveAkeneoSyncSettingsInput {
+    channelCode: string;
+    localeMapping: AkeneoLocaleMapping[];
+    categoryTreeCodes: string[];
+    includeCategoryRoot: boolean;
+}
+
+export interface AkeneoChannelOption {
+    code: string;
+    label: string;
+    categoryTree: string;
+    locales: string[];
+}
+
+export interface AkeneoCategoryTreeOption {
+    code: string;
+    label: string;
 }
 
 export interface ValidateAkeneoCredentialsInput {

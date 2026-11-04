@@ -9,6 +9,7 @@ import {
     AkeneoAttribute,
     AkeneoAttributeOption,
     AkeneoCategory,
+    AkeneoChannel,
     AkeneoFamily,
     AkeneoFamilyVariant,
     AkeneoListOptions,
@@ -66,8 +67,29 @@ export class AkeneoApiClient {
         private readonly options: AkeneoApiClientOptions,
     ) {}
 
+    channels(options?: AkeneoListOptions): Promise<AkeneoPage<AkeneoChannel>> {
+        return this.list('/channels', options);
+    }
+
     categories(options?: AkeneoListOptions): Promise<AkeneoPage<AkeneoCategory>> {
         return this.list('/categories', options);
+    }
+
+    async category(code: string): Promise<AkeneoCategory> {
+        return (await this.getJson(`${API_PREFIX}/categories/${encodeURIComponent(code)}`)) as AkeneoCategory;
+    }
+
+    /** Root categories, i.e. one per category tree. */
+    categoryTrees(options?: AkeneoListOptions): Promise<AkeneoPage<AkeneoCategory>> {
+        return this.categories({ ...options, search: { is_root: [{ operator: '=', value: true }] } });
+    }
+
+    /** All descendants of a tree's root (any depth), excluding the root itself. */
+    categoryTreeDescendants(
+        rootCode: string,
+        options?: AkeneoListOptions,
+    ): Promise<AkeneoPage<AkeneoCategory>> {
+        return this.categories({ ...options, search: { parent: [{ operator: '=', value: rootCode }] } });
     }
 
     attributes(options?: AkeneoListOptions): Promise<AkeneoPage<AkeneoAttribute>> {
