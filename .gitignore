@@ -9,3 +9,4 @@ static/email/test-emails
 .env
 .env.*
 !.env.example
+src/gql
