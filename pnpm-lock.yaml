@@ -8,12 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@graphql-typed-document-node/core':
+        specifier: 3.2.0
+        version: 3.2.0(graphql@16.14.2)
       '@nestjs/common':
         specifier: 12.3.2
         version: 12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
       '@nestjs/graphql':
         specifier: 14.0.3
         version: 14.0.3(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.3.2)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@21.0.1)(typescript@5.8.2)
+      '@tanstack/react-query':
+        specifier: 5.105.3
+        version: 5.105.3(@types/react@19.3.0)(react@19.3.1)
       '@vendure/asset-server-plugin':
         specifier: 3.8.1
         version: 3.8.1(@types/node@26.6.6)(supports-color@7.2.0)
@@ -35,15 +41,33 @@ importers:
       dotenv:
         specifier: 18.0.9
         version: 18.0.9
+      gql.tada:
+        specifier: 1.11.4
+        version: 1.11.4(graphql@16.14.2)(typescript@5.8.2)
       graphql:
         specifier: 16.14.2
         version: 16.14.2
       graphql-tag:
         specifier: 2.12.7
         version: 2.12.7(graphql@16.14.2)
+      lucide-react:
+        specifier: 0.577.0
+        version: 0.577.0(react@19.3.1)
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      react-dom:
+        specifier: 19.3.1
+        version: 19.3.1(react@19.3.1)
+      react-hook-form:
+        specifier: 7.91.0
+        version: 7.91.0(@types/react@19.3.0)(react@19.3.1)
+      sonner:
+        specifier: 2.0.8
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       typeorm:
         specifier: ^0.3.31
         version: 0.3.31(pg@8.23.1)(supports-color@7.2.0)(ts-node@10.9.2(@types/node@26.6.6)(typescript@5.8.2))
@@ -51,6 +75,9 @@ importers:
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
       '@vendure/cli':
         specifier: 3.8.1
         version: 3.8.1(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0)
