@@ -96,6 +96,32 @@ export class AkeneoApiClient {
         return this.list('/attributes', options);
     }
 
+    async attribute(code: string): Promise<AkeneoAttribute> {
+        return (await this.getJson(
+            `${API_PREFIX}/attributes/${encodeURIComponent(code)}`,
+        )) as AkeneoAttribute;
+    }
+
+    async attributeOption(attributeCode: string, code: string): Promise<AkeneoAttributeOption> {
+        const path = `/attributes/${encodeURIComponent(attributeCode)}/options/${encodeURIComponent(code)}`;
+        return (await this.getJson(`${API_PREFIX}${path}`)) as AkeneoAttributeOption;
+    }
+
+    async family(code: string): Promise<AkeneoFamily> {
+        return (await this.getJson(`${API_PREFIX}/families/${encodeURIComponent(code)}`)) as AkeneoFamily;
+    }
+
+    async familyVariant(familyCode: string, code: string): Promise<AkeneoFamilyVariant> {
+        const path = `/families/${encodeURIComponent(familyCode)}/variants/${encodeURIComponent(code)}`;
+        return (await this.getJson(`${API_PREFIX}${path}`)) as AkeneoFamilyVariant;
+    }
+
+    async productModel(code: string): Promise<AkeneoProductModel> {
+        return (await this.getJson(
+            `${API_PREFIX}/product-models/${encodeURIComponent(code)}`,
+        )) as AkeneoProductModel;
+    }
+
     attributeOptions(
         attributeCode: string,
         options?: AkeneoListOptions,
@@ -189,6 +215,8 @@ export class AkeneoApiClient {
             ...extra,
         };
         if (options.search) query.search = JSON.stringify(options.search);
+        if (options.scope) query.scope = options.scope;
+        if (options.locales?.length) query.locales = options.locales.join(',');
         return this.getPage<T>(`${API_PREFIX}${path}`, query);
     }
 

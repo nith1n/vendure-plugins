@@ -31,6 +31,8 @@ export const adminApiExtensions = gql`
         categoryTreeCodes: [String!]!
         "Whether each tree root itself becomes a Collection"
         includeCategoryRoot: Boolean!
+        "Text attribute used as product name; null uses each family's label attribute"
+        productNameAttribute: String
     }
 
     "Which Akeneo locale feeds a Vendure language"
@@ -76,6 +78,23 @@ export const adminApiExtensions = gql`
         error: String
     }
 
+    "Latest product sync run of the active channel"
+    type AkeneoProductSyncStatus {
+        runId: String!
+        state: AkeneoSyncRunState!
+        pages: Int!
+        "Akeneo products processed; each becomes one Vendure variant"
+        products: Int!
+        created: Int!
+        updated: Int!
+        unchanged: Int!
+        "Vendure Products created (one per root product model or simple product)"
+        productsCreated: Int!
+        startedAt: DateTime!
+        finishedAt: DateTime
+        error: String
+    }
+
     input AkeneoLocaleMappingInput {
         languageCode: LanguageCode!
         locale: String!
@@ -88,6 +107,14 @@ export const adminApiExtensions = gql`
         includeCategoryRoot: Boolean!
         "When false, no catalog sync runs for this channel"
         enabled: Boolean!
+        "Null uses each family's label attribute"
+        productNameAttribute: String
+    }
+
+    type AkeneoAttributeChoice {
+        code: String!
+        label: String!
+        type: String!
     }
 
     type AkeneoCredentialValidationResult {
@@ -133,8 +160,12 @@ export const adminApiExtensions = gql`
         akeneoCategoryTrees: [AkeneoCategoryTreeOption!]!
         "Suggested locale for each language of the active channel"
         akeneoSuggestedLocaleMapping(channelCode: String!): [AkeneoLocaleMapping!]!
+        "Text and textarea attributes of the connected Akeneo instance, read live"
+        akeneoTextAttributes: [AkeneoAttributeChoice!]!
         "Null if no category sync has run for this channel yet"
         akeneoCategorySyncStatus: AkeneoCategorySyncStatus
+        "Null if no product sync has run for this channel yet"
+        akeneoProductSyncStatus: AkeneoProductSyncStatus
     }
 
     extend type Mutation {
@@ -144,5 +175,7 @@ export const adminApiExtensions = gql`
         saveAkeneoSyncSettings(input: SaveAkeneoSyncSettingsInput!): AkeneoConnectionSettings!
         "Queues a sync of the selected Akeneo category trees to Collections, one page per job."
         startAkeneoCategorySync: Job!
+        "Queues a sync of the Akeneo channel's products to Products and ProductVariants, one page per job."
+        startAkeneoProductSync: Job!
     }
 `;

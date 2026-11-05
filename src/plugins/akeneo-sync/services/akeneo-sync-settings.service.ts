@@ -4,11 +4,18 @@ import { RequestContext, TransactionalConnection, UserInputError } from '@vendur
 import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
 import { AkeneoChannel, AkeneoPage } from '../akeneo/akeneo-types';
 import { AkeneoConnectionSettings, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
-import { AkeneoCategoryTreeOption, AkeneoChannelOption, SaveAkeneoSyncSettingsInput } from '../types';
+import {
+    AkeneoAttributeChoice,
+    AkeneoCategoryTreeOption,
+    AkeneoChannelOption,
+    SaveAkeneoSyncSettingsInput,
+} from '../types';
 import { displayLabel, suggestLocaleMapping } from '../utils/locales';
 
 import { AkeneoApiService } from './akeneo-api.service';
 import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.service';
+
+const TEXT_ATTRIBUTE_TYPES = ['pim_catalog_text', 'pim_catalog_textarea'];
 
 /**
  * What to sync for a Vendure channel: the Akeneo channel, which Akeneo locale feeds each
@@ -37,6 +44,18 @@ export class AkeneoSyncSettingsService {
         const client = await this.akeneoApiService.getClient(ctx);
         const roots = await collect(client, await client.categoryTrees());
         return roots.map(c => ({ code: c.code, label: displayLabel(c.labels, ctx.languageCode, c.code) }));
+    }
+
+    async getTextAttributeOptions(ctx: RequestContext): Promise<AkeneoAttributeChoice[]> {
+        const client = await this.akeneoApiService.getClient(ctx);
+        const attributes = await collect(client, await client.attributes());
+        return attributes
+            .filter(a => TEXT_ATTRIBUTE_TYPES.includes(a.type))
+            .map(a => ({
+                code: a.code,
+                label: displayLabel(a.labels, ctx.languageCode, a.code),
+                type: a.type,
+            }));
     }
 
     async suggestLocaleMapping(ctx: RequestContext, channelCode: string): Promise<AkeneoLocaleMapping[]> {
@@ -76,7 +95,17 @@ export class AkeneoSyncSettingsService {
             }
         }
 
+        const nameAttribute = input.productNameAttribute || null;
+        if (nameAttribute) {
+            const client = await this.akeneoApiService.getClient(ctx);
+            const attribute = await client.attribute(nameAttribute).catch(() => undefined);
+            if (!attribute || !TEXT_ATTRIBUTE_TYPES.includes(attribute.type)) {
+                throw new UserInputError(`"${nameAttribute}" is not an Akeneo text attribute`);
+            }
+        }
+
         settings.channelCode = channel.code;
+        settings.productNameAttribute = nameAttribute;
         settings.localeMapping = input.localeMapping;
         settings.categoryTreeCodes = treeCodes;
         settings.includeCategoryRoot = input.includeCategoryRoot;

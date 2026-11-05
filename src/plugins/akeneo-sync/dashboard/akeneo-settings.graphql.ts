@@ -19,6 +19,7 @@ export const akeneoSettingsFragment = graphql(`
         }
         categoryTreeCodes
         includeCategoryRoot
+        productNameAttribute
     }
 `);
 
@@ -66,6 +67,10 @@ export const akeneoSyncOptionsQuery = graphql(`
             locales
         }
         akeneoCategoryTrees {
+            code
+            label
+        }
+        akeneoTextAttributes {
             code
             label
         }
@@ -119,6 +124,32 @@ export const akeneoCategorySyncStatusQuery = graphql(`
 export const startAkeneoCategorySyncMutation = graphql(`
     mutation StartAkeneoCategorySync {
         startAkeneoCategorySync {
+            id
+        }
+    }
+`);
+
+export const akeneoProductSyncStatusQuery = graphql(`
+    query AkeneoProductSyncStatus {
+        akeneoProductSyncStatus {
+            runId
+            state
+            pages
+            products
+            created
+            updated
+            unchanged
+            productsCreated
+            startedAt
+            finishedAt
+            error
+        }
+    }
+`);
+
+export const startAkeneoProductSyncMutation = graphql(`
+    mutation StartAkeneoProductSync {
+        startAkeneoProductSync {
             id
         }
     }

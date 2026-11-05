@@ -72,6 +72,10 @@ export class AkeneoConnectionSettings extends VendureEntity {
     /** Create the tree root itself as a Collection, rather than starting at its children. */
     @Column({ type: 'boolean', default: false })
     includeCategoryRoot: boolean;
+
+    /** Text attribute used as product name. Null uses each family's label attribute. */
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    productNameAttribute: string | null;
 }
 
 // A type alias (not an interface) so it satisfies the job queue's JsonCompatible data constraint

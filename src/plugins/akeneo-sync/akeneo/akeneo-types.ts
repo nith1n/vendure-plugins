@@ -28,6 +28,10 @@ export interface AkeneoListOptions {
     /** Page size, max 100. */
     limit?: number;
     search?: AkeneoSearch;
+    /** Only return values for this Akeneo channel (and non-scopable ones). */
+    scope?: string;
+    /** Only return values for these locales (and non-localizable ones). */
+    locales?: string[];
 }
 
 export interface AkeneoChannel {
@@ -56,6 +60,7 @@ export interface AkeneoAttribute {
     scopable: boolean;
     labels: AkeneoLabels;
     sort_order?: number;
+    is_main_identifier?: boolean;
 }
 
 export interface AkeneoAttributeOption {
@@ -83,6 +88,8 @@ export interface AkeneoValue {
     locale: string | null;
     scope: string | null;
     data: unknown;
+    /** e.g. `pim_catalog_simpleselect`; included by Akeneo on product and product model values. */
+    attribute_type?: string;
 }
 
 /** Attribute code -> one value per locale/scope combination. */

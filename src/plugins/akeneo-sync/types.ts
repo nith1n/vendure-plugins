@@ -44,6 +44,14 @@ export interface SaveAkeneoSyncSettingsInput {
     categoryTreeCodes: string[];
     includeCategoryRoot: boolean;
     enabled: boolean;
+    /** Null uses each family's label attribute. */
+    productNameAttribute?: string | null;
+}
+
+export interface AkeneoAttributeChoice {
+    code: string;
+    label: string;
+    type: string;
 }
 
 export interface AkeneoChannelOption {

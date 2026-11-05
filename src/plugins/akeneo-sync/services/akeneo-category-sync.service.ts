@@ -1,13 +1,11 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { JobFilterParameter, JobState, LanguageCode, SortOrder } from '@vendure/common/lib/generated-types';
+import { LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
     ConfigService,
     ID,
     idsAreEqual,
-    isInspectableJobQueueStrategy,
-    Job,
     JobQueue,
     JobQueueService,
     Logger,
@@ -23,6 +21,15 @@ import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoCategory, AkeneoLabels } from '../akeneo/akeneo-types';
 import { loggerCtx } from '../constants';
 import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
+import {
+    ACTIVE_JOB_STATES,
+    errorText,
+    findChannelJobs,
+    hasActiveRun,
+    runState,
+    SyncRunJobData,
+    SyncRunState,
+} from '../utils/sync-runs';
 
 import { AkeneoApiService } from './akeneo-api.service';
 import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.service';
@@ -36,12 +43,8 @@ type CategorySyncTotals = {
     unchanged: number;
 };
 
-interface CategorySyncJobData {
+interface CategorySyncJobData extends SyncRunJobData {
     ctx: SerializedRequestContext;
-    channelId: string;
-    /** Shared by all page jobs of one run. */
-    runId: string;
-    startedAt: string;
     /** Totals of the pages before this one, carried forward so the latest job describes the run. */
     totals: CategorySyncTotals;
     /** Settings snapshot taken when the run starts, so a run stays consistent if they change. */
@@ -68,11 +71,9 @@ export interface CategorySyncPageResult {
     totals: CategorySyncTotals;
 }
 
-export type CategorySyncRunState = 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-
 export interface CategorySyncStatus extends CategorySyncTotals {
     runId: string;
-    state: CategorySyncRunState;
+    state: SyncRunState;
     trees: string[];
     currentTree: string | null;
     startedAt: Date;
@@ -94,9 +95,6 @@ interface TreeContext {
 
 const QUEUE_NAME = 'akeneo-category-sync';
 const JOB_RETRIES = 3;
-const ACTIVE_STATES = [JobState.PENDING, JobState.RUNNING, JobState.RETRYING];
-/** How many recent jobs of the queue to look through for this channel's latest run. */
-const STATUS_LOOKBACK = 50;
 const EMPTY_TOTALS: CategorySyncTotals = { pages: 0, categories: 0, created: 0, updated: 0, unchanged: 0 };
 
 /**
@@ -141,8 +139,11 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         if (!settings.localeMapping.some(m => m.languageCode === defaultLanguage)) {
             throw new UserInputError(`Map an Akeneo locale to the default language "${defaultLanguage}"`);
         }
-        const active = await this.findChannelJobs(ctx, { state: { in: ACTIVE_STATES } });
-        if (active.length) throw new UserInputError('A category sync is already running for this channel');
+        const jobs = await findChannelJobs(this.configService, ctx, QUEUE_NAME, {
+            state: { in: ACTIVE_JOB_STATES },
+        });
+        if (hasActiveRun(jobs))
+            throw new UserInputError('A category sync is already running for this channel');
 
         return this.queue.add(
             {
@@ -212,49 +213,23 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         };
     }
 
-    /**
-     * Status of this channel's latest run. Each page job carries the run's totals forward, so
-     * the newest job of the run describes all of it: while a page is queued or running the run
-     * is still going, otherwise the newest job's outcome is the run's outcome.
-     */
+    /** Status of this channel's latest run; see `utils/sync-runs.ts` for how runs are tracked. */
     async getStatus(ctx: RequestContext): Promise<CategorySyncStatus | null> {
-        const [latest] = await this.findChannelJobs(ctx);
+        const [latest] = await findChannelJobs<CategorySyncJobData>(this.configService, ctx, QUEUE_NAME);
         if (!latest) return null;
         const data = latest.data;
         const result = latest.result as CategorySyncPageResult | undefined;
-        const active = ACTIVE_STATES.includes(latest.state);
-        const state: CategorySyncRunState = active
-            ? 'RUNNING'
-            : latest.state === JobState.COMPLETED
-              ? 'COMPLETED'
-              : latest.state === JobState.CANCELLED
-                ? 'CANCELLED'
-                : 'FAILED';
+        const state = runState(latest);
         return {
             runId: data.runId,
             state,
             trees: data.trees,
-            currentTree: active ? data.trees[data.treeIndex] : null,
+            currentTree: state === 'RUNNING' ? data.trees[data.treeIndex] : null,
             ...(result?.totals ?? data.totals),
             startedAt: new Date(data.startedAt),
-            finishedAt: active ? null : (latest.settledAt ?? null),
+            finishedAt: state === 'RUNNING' ? null : (latest.settledAt ?? null),
             error: state === 'FAILED' ? errorText(latest.error) : null,
         };
-    }
-
-    /** Newest first. Jobs from before runs were tracked (no `runId`) are ignored. */
-    private async findChannelJobs(ctx: RequestContext, filter: JobFilterParameter = {}) {
-        const strategy = this.configService.jobQueueOptions.jobQueueStrategy;
-        // Without an inspectable strategy there is no way to list jobs; report no runs
-        if (!isInspectableJobQueueStrategy(strategy)) return [];
-        const { items } = await strategy.findMany({
-            filter: { queueName: { eq: QUEUE_NAME }, ...filter },
-            sort: { createdAt: SortOrder.DESC },
-            take: STATUS_LOOKBACK,
-        });
-        return items
-            .map(job => job as Job<CategorySyncJobData>)
-            .filter(job => job.data.runId && job.data.channelId === String(ctx.channelId));
     }
 
     private async upsertCategories(ctx: RequestContext, categories: AkeneoCategory[], tree: TreeContext) {
@@ -405,10 +380,4 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             .findOneOrFail({ where: { isRoot: true }, select: ['id'] });
         return root.id;
     }
-}
-
-function errorText(error: unknown): string {
-    if (typeof error === 'string') return error;
-    if (error instanceof Error) return error.message;
-    return error ? JSON.stringify(error) : 'Unknown error';
 }

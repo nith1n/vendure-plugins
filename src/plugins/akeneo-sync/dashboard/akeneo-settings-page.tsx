@@ -26,6 +26,7 @@ import {
     validateAkeneoCredentialsMutation,
 } from './akeneo-settings.graphql';
 import { AkeneoCategorySyncBlock } from './akeneo-category-sync-block';
+import { AkeneoProductSyncBlock } from './akeneo-product-sync-block';
 import { AkeneoSyncSettingsBlock } from './akeneo-sync-settings-block';
 
 const pageId = 'akeneo-settings';
@@ -249,6 +250,9 @@ export function AkeneoSettingsPage() {
                 </PageBlock>
                 <PageBlock column="side" blockId="status" title="Status">
                     <ConnectionStatus settings={settings} testResult={testResult} />
+                </PageBlock>
+                <PageBlock column="side" blockId="product-sync" title="Product sync">
+                    <AkeneoProductSyncBlock settings={settings} hasUnsavedSettings={syncSettingsDirty} />
                 </PageBlock>
                 <PageBlock column="side" blockId="category-sync" title="Category sync">
                     <AkeneoCategorySyncBlock settings={settings} hasUnsavedSettings={syncSettingsDirty} />

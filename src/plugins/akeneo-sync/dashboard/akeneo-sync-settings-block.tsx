@@ -30,6 +30,7 @@ type LanguageCode = Settings['localeMapping'][number]['languageCode'];
 
 /** Base UI selects need a non-empty value for the "not mapped" option. */
 const NOT_MAPPED = '__not_mapped__';
+const FAMILY_LABEL = '__family_label__';
 
 interface SyncValues {
     channelCode: string;
@@ -38,6 +39,8 @@ interface SyncValues {
     trees: string[];
     includeRoot: boolean;
     enabled: boolean;
+    /** Empty uses each family's label attribute. */
+    nameAttribute: string;
 }
 
 function toValues(settings: Settings): SyncValues {
@@ -47,6 +50,7 @@ function toValues(settings: Settings): SyncValues {
         trees: settings.categoryTreeCodes,
         includeRoot: settings.includeCategoryRoot,
         enabled: settings.enabled,
+        nameAttribute: settings.productNameAttribute ?? '',
     };
 }
 
@@ -92,6 +96,7 @@ function SyncSettingsForm({
     });
     const channels = options.data?.akeneoChannels ?? [];
     const trees = options.data?.akeneoCategoryTrees ?? [];
+    const textAttributes = options.data?.akeneoTextAttributes ?? [];
     const languages = options.data?.activeChannel.availableLanguageCodes ?? [];
     const defaultLanguage = options.data?.activeChannel.defaultLanguageCode;
     const channel = channels.find(c => c.code === values.channelCode);
@@ -123,6 +128,7 @@ function SyncSettingsForm({
                     categoryTreeCodes: v.trees,
                     includeCategoryRoot: v.includeRoot,
                     enabled: v.enabled,
+                    productNameAttribute: v.nameAttribute || null,
                 },
             }),
         onSuccess: result => {
@@ -278,6 +284,41 @@ function SyncSettingsForm({
                         </span>
                     </span>
                 </label>
+            </Section>
+
+            <Section
+                title="Products"
+                description="How Akeneo products become Vendure products and variants. Product models become products, and their products become variants."
+            >
+                <Field
+                    label="Product name"
+                    hint="Families often use the SKU as their label attribute, so pick the attribute that holds the real name."
+                >
+                    <Select
+                        items={{
+                            [FAMILY_LABEL]: "Family's label attribute",
+                            ...Object.fromEntries(
+                                textAttributes.map(a => [a.code, `${a.label} (${a.code})`]),
+                            ),
+                        }}
+                        value={values.nameAttribute || FAMILY_LABEL}
+                        onValueChange={v =>
+                            setValues(s => ({ ...s, nameAttribute: v && v !== FAMILY_LABEL ? v : '' }))
+                        }
+                    >
+                        <SelectTrigger className="w-full max-w-sm">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={FAMILY_LABEL}>Family's label attribute</SelectItem>
+                            {textAttributes.map(a => (
+                                <SelectItem key={a.code} value={a.code}>
+                                    {a.label} ({a.code})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </Field>
             </Section>
 
             <div className="flex items-center justify-end gap-3 border-t pt-4">
