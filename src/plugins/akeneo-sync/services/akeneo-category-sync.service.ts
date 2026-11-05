@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { LanguageCode } from '@vendure/common/lib/generated-types';
+import { ConfigurableOperationInput, LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
@@ -19,6 +19,7 @@ import { In } from 'typeorm';
 
 import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoCategory, AkeneoLabels } from '../akeneo/akeneo-types';
+import { AKENEO_CATEGORY_FILTER_CODE } from '../config/akeneo-category-collection-filter';
 import { loggerCtx } from '../constants';
 import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
 import {
@@ -85,6 +86,10 @@ interface ExistingCollection {
     id: ID;
     parentId: ID;
     names: Map<LanguageCode, string>;
+    /** Whether it already selects its variants with the Akeneo category filter. */
+    hasCategoryFilter: boolean;
+    /** Filters added by hand, kept when the Akeneo category filter is (re)applied. */
+    otherFilters: ConfigurableOperationInput[];
 }
 
 interface TreeContext {
@@ -289,7 +294,9 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         const translations = this.namesFromLabels(ctx, code, labels, tree.localeMapping);
         const collection = await this.collectionService.create(ctx, {
             parentId,
-            filters: [],
+            filters: [categoryFilter(code)],
+            // The filter already includes descendants; inheriting would also require the parent's code
+            inheritFilters: false,
             translations: [...translations].map(([languageCode, name]) => ({
                 languageCode,
                 name,
@@ -298,7 +305,13 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             })),
             customFields: { akeneoCode: code, akeneoChannelId: String(ctx.channelId) },
         });
-        return { id: collection.id, parentId, names: translations };
+        return {
+            id: collection.id,
+            parentId,
+            names: translations,
+            hasCategoryFilter: true,
+            otherFilters: [],
+        };
     }
 
     /** Returns false when nothing changed, to avoid needless collection events. */
@@ -312,8 +325,9 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         const names = this.namesFromLabels(ctx, category.code, category.labels, tree.localeMapping);
         const changedNames = [...names].filter(([lang, name]) => current.names.get(lang) !== name);
         const moved = !idsAreEqual(current.parentId, parentId);
+        const filterMissing = !current.hasCategoryFilter;
 
-        if (changedNames.length) {
+        if (changedNames.length || filterMissing) {
             await this.collectionService.update(ctx, {
                 id: current.id,
                 translations: changedNames.map(([languageCode, name]) =>
@@ -322,7 +336,14 @@ export class AkeneoCategorySyncService implements OnModuleInit {
                         ? { languageCode, name }
                         : { languageCode, name, slug: name, description: '' },
                 ),
+                ...(filterMissing
+                    ? {
+                          filters: [categoryFilter(category.code), ...current.otherFilters],
+                          inheritFilters: false,
+                      }
+                    : {}),
             });
+            current.hasCategoryFilter = true;
         }
         if (moved) {
             await this.collectionService.move(ctx, {
@@ -333,7 +354,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         }
         current.names = new Map([...current.names, ...names]);
         current.parentId = parentId;
-        return changedNames.length > 0 || moved;
+        return changedNames.length > 0 || moved || filterMissing;
     }
 
     /**
@@ -369,6 +390,18 @@ export class AkeneoCategorySyncService implements OnModuleInit {
                     id: c.id,
                     parentId: c.parentId,
                     names: new Map(c.translations.map(t => [t.languageCode, t.name])),
+                    hasCategoryFilter:
+                        !c.inheritFilters &&
+                        c.filters.some(
+                            f =>
+                                f.code === AKENEO_CATEGORY_FILTER_CODE &&
+                                f.args.some(
+                                    a => a.name === 'categoryCode' && a.value === c.customFields.akeneoCode,
+                                ),
+                        ),
+                    otherFilters: c.filters
+                        .filter(f => f.code !== AKENEO_CATEGORY_FILTER_CODE)
+                        .map(f => ({ code: f.code, arguments: f.args })),
                 },
             ]),
         );
@@ -380,4 +413,14 @@ export class AkeneoCategorySyncService implements OnModuleInit {
             .findOneOrFail({ where: { isRoot: true }, select: ['id'] });
         return root.id;
     }
+}
+
+function categoryFilter(code: string): ConfigurableOperationInput {
+    return {
+        code: AKENEO_CATEGORY_FILTER_CODE,
+        arguments: [
+            { name: 'categoryCode', value: code },
+            { name: 'combineWithAnd', value: 'true' },
+        ],
+    };
 }

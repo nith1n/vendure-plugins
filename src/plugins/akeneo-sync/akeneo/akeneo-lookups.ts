@@ -2,6 +2,7 @@ import { AkeneoApiClient, AkeneoApiError } from './akeneo-api-client';
 import {
     AkeneoAttribute,
     AkeneoAttributeOption,
+    AkeneoCategory,
     AkeneoFamily,
     AkeneoFamilyVariant,
     AkeneoProductModel,
@@ -32,6 +33,11 @@ export class AkeneoLookups {
         return model;
     }
 
+    /** Undefined if the category no longer exists. */
+    category(code: string): Promise<AkeneoCategory | undefined> {
+        return this.once(`category:${code}`, () => this.client.category(code).catch(notFoundAsUndefined));
+    }
+
     family(code: string): Promise<AkeneoFamily> {
         return this.once(`family:${code}`, () => this.client.family(code));
     }
@@ -47,10 +53,7 @@ export class AkeneoLookups {
     /** Undefined if the option no longer exists. */
     option(attributeCode: string, code: string): Promise<AkeneoAttributeOption | undefined> {
         return this.once(`option:${attributeCode}:${code}`, () =>
-            this.client.attributeOption(attributeCode, code).catch((e: unknown) => {
-                if (e instanceof AkeneoApiError && e.httpStatus === 404) return undefined;
-                throw e;
-            }),
+            this.client.attributeOption(attributeCode, code).catch(notFoundAsUndefined),
         );
     }
 
@@ -58,6 +61,11 @@ export class AkeneoLookups {
         if (!this.cache.has(key)) this.cache.set(key, load());
         return this.cache.get(key) as Promise<T>;
     }
+}
+
+function notFoundAsUndefined(e: unknown): undefined {
+    if (e instanceof AkeneoApiError && e.httpStatus === 404) return undefined;
+    throw e;
 }
 
 /**

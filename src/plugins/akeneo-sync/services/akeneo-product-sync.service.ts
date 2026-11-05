@@ -1,6 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { LanguageCode } from '@vendure/common/lib/generated-types';
 import {
+    Collection,
+    CollectionService,
     ConfigService,
     ID,
     idsAreEqual,
@@ -26,6 +28,7 @@ import { AkeneoLookups, findMainIdentifierAttribute, pickText, pickValue } from 
 import { AkeneoLabels, AkeneoProduct, AkeneoValue, AkeneoValues } from '../akeneo/akeneo-types';
 import { loggerCtx } from '../constants';
 import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
+import { AkeneoVariantCategory } from '../entities/akeneo-variant-category.entity';
 import {
     ACTIVE_JOB_STATES,
     errorText,
@@ -149,6 +152,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         private productVariantService: ProductVariantService,
         private productOptionGroupService: ProductOptionGroupService,
         private productOptionService: ProductOptionService,
+        private collectionService: CollectionService,
         private akeneoApiService: AkeneoApiService,
         private connectionSettingsService: AkeneoConnectionSettingsService,
     ) {}
@@ -274,6 +278,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         );
         const products = new Map<string, SyncedProduct>();
         const touched = new Set<ID>();
+        const changedCategories = new Set<string>();
 
         for (const item of items) {
             const target = await this.resolveTarget(item, lookups, run);
@@ -286,7 +291,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
             for (const axis of target.axes) {
                 options.push(await this.upsertAxisOption(ctx, product, axis, item, lookups, run));
             }
-            const outcome = await this.upsertVariant(
+            const { outcome, id } = await this.upsertVariant(
                 ctx,
                 item,
                 product,
@@ -294,10 +299,18 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 variants.get(item.uuid),
                 run,
             );
-            counts[outcome]++;
+            const categories = await this.withAncestors(item.categories, lookups);
+            const categoriesChanged = await this.syncVariantCategories(
+                ctx,
+                id,
+                categories,
+                changedCategories,
+            );
+            counts[outcome === 'unchanged' && categoriesChanged ? 'updated' : outcome]++;
             touched.add(product.id);
         }
         await this.syncProductEnabled(ctx, touched);
+        await this.reapplyCategoryCollections(ctx, changedCategories);
         return counts;
     }
 
@@ -465,7 +478,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         options: AxisOption[],
         existing: ProductVariant | undefined,
         run: Run,
-    ): Promise<'created' | 'updated' | 'unchanged'> {
+    ): Promise<{ outcome: 'created' | 'updated' | 'unchanged'; id: ID }> {
         const sku = this.sku(item, run);
         const names = this.variantNames(product.names, options);
         const optionIds = options.map(o => o.id);
@@ -481,7 +494,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         }
 
         if (!existing) {
-            await this.productVariantService.create(ctx, [
+            const [created] = await this.productVariantService.create(ctx, [
                 {
                     productId: product.id,
                     sku,
@@ -491,7 +504,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     customFields: { akeneoUuid: item.uuid },
                 },
             ]);
-            return 'created';
+            return { outcome: 'created', id: created.id };
         }
 
         const currentNames = new Map(existing.translations.map(t => [t.languageCode, t.name]));
@@ -508,7 +521,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
             !changedNames.length &&
             !optionsChanged
         ) {
-            return 'unchanged';
+            return { outcome: 'unchanged', id: existing.id };
         }
         await this.productVariantService.update(ctx, [
             {
@@ -519,11 +532,12 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 ...(changedNames.length ? { translations: this.translations(new Map(changedNames)) } : {}),
             },
         ]);
-        return 'updated';
+        return { outcome: 'updated', id: existing.id };
     }
 
     private async retireVariant(ctx: RequestContext, variant: ProductVariant, akeneoUuid: string) {
         await this.releaseVariant(ctx, variant.id);
+        await this.connection.getRepository(ctx, AkeneoVariantCategory).delete({ variantId: variant.id });
         await this.productVariantService.softDelete(ctx, variant.id);
         // A simple product's Product only existed for this variant
         if (variant.product.customFields.akeneoUuid === akeneoUuid) {
@@ -539,6 +553,56 @@ export class AkeneoProductSyncService implements OnModuleInit {
         return this.connection
             .getRepository(ctx, ProductVariant)
             .update(id, { customFields: { akeneoUuid: null } });
+    }
+
+    /** The categories plus all their ancestors, so parent Collections include descendants. */
+    private async withAncestors(codes: string[], lookups: AkeneoLookups): Promise<string[]> {
+        const all = new Set<string>();
+        for (const code of codes) {
+            let current: string | null = code;
+            while (current && !all.has(current)) {
+                all.add(current);
+                current = (await lookups.category(current))?.parent ?? null;
+            }
+        }
+        return [...all];
+    }
+
+    /** Replaces the variant's category rows; returns whether they changed. */
+    private async syncVariantCategories(
+        ctx: RequestContext,
+        variantId: ID,
+        codes: string[],
+        changed: Set<string>,
+    ): Promise<boolean> {
+        const repo = this.connection.getRepository(ctx, AkeneoVariantCategory);
+        const current = new Set((await repo.find({ where: { variantId } })).map(r => r.categoryCode));
+        const wanted = new Set(codes);
+        const added = codes.filter(code => !current.has(code));
+        const removed = [...current].filter(code => !wanted.has(code));
+        if (removed.length) await repo.delete({ variantId, categoryCode: In(removed) });
+        if (added.length) {
+            await repo.save(
+                added.map(categoryCode => new AkeneoVariantCategory({ variantId, categoryCode })),
+            );
+        }
+        [...added, ...removed].forEach(code => changed.add(code));
+        return added.length > 0 || removed.length > 0;
+    }
+
+    /** Re-applies the filters of this channel's Collections for categories whose variants changed. */
+    private async reapplyCategoryCollections(ctx: RequestContext, codes: Set<string>) {
+        if (!codes.size) return;
+        const collections = await this.connection.getRepository(ctx, Collection).find({
+            where: { customFields: { akeneoCode: In([...codes]), akeneoChannelId: String(ctx.channelId) } },
+            select: ['id'],
+        });
+        if (collections.length) {
+            await this.collectionService.triggerApplyFiltersJob(ctx, {
+                collectionIds: collections.map(c => c.id),
+                applyToChangedVariantsOnly: false,
+            });
+        }
     }
 
     /** A Product is enabled when any of its variants is. */

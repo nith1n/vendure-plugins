@@ -6,9 +6,11 @@ import {
 } from './api/akeneo-connection-settings.resolver';
 import { adminApiExtensions } from './api/api-extensions';
 import { AkeneoSyncAdminResolver } from './api/akeneo-sync.resolver';
+import { akeneoCategoryCollectionFilter } from './config/akeneo-category-collection-filter';
 import { AKENEO_SYNC_PLUGIN_OPTIONS } from './constants';
 import { akeneoCustomFields } from './custom-fields';
 import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.entity';
+import { AkeneoVariantCategory } from './entities/akeneo-variant-category.entity';
 import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
 import { AkeneoCategorySyncService } from './services/akeneo-category-sync.service';
@@ -27,7 +29,7 @@ import { PluginInitOptions } from './types';
         AkeneoSyncSettingsService,
         AkeneoProductSyncService,
     ],
-    entities: [AkeneoConnectionSettings],
+    entities: [AkeneoConnectionSettings, AkeneoVariantCategory],
     adminApiExtensions: {
         schema: adminApiExtensions,
         resolvers: [
@@ -38,6 +40,7 @@ import { PluginInitOptions } from './types';
     },
     configuration: config => {
         config.authOptions.customPermissions.push(manageAkeneoSyncPermission);
+        config.catalogOptions.collectionFilters.push(akeneoCategoryCollectionFilter);
         for (const [entity, fields] of Object.entries(akeneoCustomFields)) {
             const key = entity as keyof CustomFields;
             config.customFields[key] = [...(config.customFields[key] ?? []), ...(fields ?? [])];
