@@ -30,7 +30,10 @@ type LanguageCode = Settings['localeMapping'][number]['languageCode'];
 
 /** Base UI selects need a non-empty value for the "not mapped" option. */
 const NOT_MAPPED = '__not_mapped__';
-const FAMILY_LABEL = '__family_label__';
+/** Base UI selects need a non-empty value for the "not set" option. */
+const NOT_SET = '__not_set__';
+const TEXT_TYPES = ['pim_catalog_text', 'pim_catalog_textarea'];
+const PRICE_TYPE = 'pim_catalog_price_collection';
 
 interface SyncValues {
     channelCode: string;
@@ -41,6 +44,10 @@ interface SyncValues {
     enabled: boolean;
     /** Empty uses each family's label attribute. */
     nameAttribute: string;
+    /** Empty leaves descriptions to Vendure. */
+    descriptionAttribute: string;
+    /** Empty leaves prices to Vendure. */
+    priceAttribute: string;
 }
 
 function toValues(settings: Settings): SyncValues {
@@ -51,6 +58,8 @@ function toValues(settings: Settings): SyncValues {
         includeRoot: settings.includeCategoryRoot,
         enabled: settings.enabled,
         nameAttribute: settings.productNameAttribute ?? '',
+        descriptionAttribute: settings.productDescriptionAttribute ?? '',
+        priceAttribute: settings.productPriceAttribute ?? '',
     };
 }
 
@@ -96,7 +105,9 @@ function SyncSettingsForm({
     });
     const channels = options.data?.akeneoChannels ?? [];
     const trees = options.data?.akeneoCategoryTrees ?? [];
-    const textAttributes = options.data?.akeneoTextAttributes ?? [];
+    const attributeChoices = options.data?.akeneoAttributeChoices ?? [];
+    const textAttributes = attributeChoices.filter(a => TEXT_TYPES.includes(a.type));
+    const priceAttributes = attributeChoices.filter(a => a.type === PRICE_TYPE);
     const languages = options.data?.activeChannel.availableLanguageCodes ?? [];
     const defaultLanguage = options.data?.activeChannel.defaultLanguageCode;
     const channel = channels.find(c => c.code === values.channelCode);
@@ -129,6 +140,8 @@ function SyncSettingsForm({
                     includeCategoryRoot: v.includeRoot,
                     enabled: v.enabled,
                     productNameAttribute: v.nameAttribute || null,
+                    productDescriptionAttribute: v.descriptionAttribute || null,
+                    productPriceAttribute: v.priceAttribute || null,
                 },
             }),
         onSuccess: result => {
@@ -294,30 +307,31 @@ function SyncSettingsForm({
                     label="Product name"
                     hint="Families often use the SKU as their label attribute, so pick the attribute that holds the real name."
                 >
-                    <Select
-                        items={{
-                            [FAMILY_LABEL]: "Family's label attribute",
-                            ...Object.fromEntries(
-                                textAttributes.map(a => [a.code, `${a.label} (${a.code})`]),
-                            ),
-                        }}
-                        value={values.nameAttribute || FAMILY_LABEL}
-                        onValueChange={v =>
-                            setValues(s => ({ ...s, nameAttribute: v && v !== FAMILY_LABEL ? v : '' }))
-                        }
-                    >
-                        <SelectTrigger className="w-full max-w-sm">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value={FAMILY_LABEL}>Family's label attribute</SelectItem>
-                            {textAttributes.map(a => (
-                                <SelectItem key={a.code} value={a.code}>
-                                    {a.label} ({a.code})
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <AttributeSelect
+                        attributes={textAttributes}
+                        notSetLabel="Family's label attribute"
+                        value={values.nameAttribute}
+                        onChange={nameAttribute => setValues(v => ({ ...v, nameAttribute }))}
+                    />
+                </Field>
+                <Field label="Description" hint="When not set, descriptions are managed in Vendure.">
+                    <AttributeSelect
+                        attributes={textAttributes}
+                        notSetLabel="Not synced"
+                        value={values.descriptionAttribute}
+                        onChange={descriptionAttribute => setValues(v => ({ ...v, descriptionAttribute }))}
+                    />
+                </Field>
+                <Field
+                    label="Price"
+                    hint="Prices in the channel's currencies are copied from this attribute. When not set, prices are managed in Vendure."
+                >
+                    <AttributeSelect
+                        attributes={priceAttributes}
+                        notSetLabel="Not synced"
+                        value={values.priceAttribute}
+                        onChange={priceAttribute => setValues(v => ({ ...v, priceAttribute }))}
+                    />
                 </Field>
             </Section>
 
@@ -332,6 +346,42 @@ function SyncSettingsForm({
                 </Button>
             </div>
         </div>
+    );
+}
+
+/** Akeneo attribute picker; the empty value is shown as `notSetLabel`. */
+function AttributeSelect({
+    attributes,
+    notSetLabel,
+    value,
+    onChange,
+}: Readonly<{
+    attributes: Array<{ code: string; label: string }>;
+    notSetLabel: string;
+    value: string;
+    onChange: (value: string) => void;
+}>) {
+    return (
+        <Select
+            items={{
+                [NOT_SET]: notSetLabel,
+                ...Object.fromEntries(attributes.map(a => [a.code, `${a.label} (${a.code})`])),
+            }}
+            value={value || NOT_SET}
+            onValueChange={v => onChange(v && v !== NOT_SET ? v : '')}
+        >
+            <SelectTrigger className="w-full max-w-sm">
+                <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value={NOT_SET}>{notSetLabel}</SelectItem>
+                {attributes.map(a => (
+                    <SelectItem key={a.code} value={a.code}>
+                        {a.label} ({a.code})
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
     );
 }
 

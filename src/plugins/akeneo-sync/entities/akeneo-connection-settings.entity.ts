@@ -76,6 +76,14 @@ export class AkeneoConnectionSettings extends VendureEntity {
     /** Text attribute used as product name. Null uses each family's label attribute. */
     @Column({ type: 'varchar', length: 255, nullable: true })
     productNameAttribute: string | null;
+
+    /** Text attribute used as product description. Null leaves descriptions to Vendure. */
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    productDescriptionAttribute: string | null;
+
+    /** Price collection attribute used as variant prices. Null leaves prices to Vendure. */
+    @Column({ type: 'varchar', length: 255, nullable: true })
+    productPriceAttribute: string | null;
 }
 
 // A type alias (not an interface) so it satisfies the job queue's JsonCompatible data constraint

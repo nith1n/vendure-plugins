@@ -20,6 +20,8 @@ export const akeneoSettingsFragment = graphql(`
         categoryTreeCodes
         includeCategoryRoot
         productNameAttribute
+        productDescriptionAttribute
+        productPriceAttribute
     }
 `);
 
@@ -70,9 +72,10 @@ export const akeneoSyncOptionsQuery = graphql(`
             code
             label
         }
-        akeneoTextAttributes {
+        akeneoAttributeChoices {
             code
             label
+            type
         }
         activeChannel {
             id

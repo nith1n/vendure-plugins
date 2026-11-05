@@ -46,6 +46,10 @@ export interface SaveAkeneoSyncSettingsInput {
     enabled: boolean;
     /** Null uses each family's label attribute. */
     productNameAttribute?: string | null;
+    /** Null leaves descriptions to Vendure. */
+    productDescriptionAttribute?: string | null;
+    /** Null leaves prices to Vendure. */
+    productPriceAttribute?: string | null;
 }
 
 export interface AkeneoAttributeChoice {

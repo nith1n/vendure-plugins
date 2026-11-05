@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { LanguageCode } from '@vendure/common/lib/generated-types';
+import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
@@ -61,6 +61,8 @@ interface ProductSyncJobData extends SyncRunJobData {
     categoryTree: string;
     localeMapping: AkeneoLocaleMapping[];
     nameAttribute: string | null;
+    descriptionAttribute: string | null;
+    priceAttribute: string | null;
     /** Resolved by the first page; null means SKUs fall back to the product UUID. */
     identifierAttribute: string | null;
     /** `next` URL of the previous page; null for the first page. */
@@ -85,7 +87,12 @@ export interface ProductSyncStatus extends ProductSyncTotals {
 
 type Run = Pick<
     ProductSyncJobData,
-    'akeneoChannel' | 'localeMapping' | 'nameAttribute' | 'identifierAttribute'
+    | 'akeneoChannel'
+    | 'localeMapping'
+    | 'nameAttribute'
+    | 'descriptionAttribute'
+    | 'priceAttribute'
+    | 'identifierAttribute'
 >;
 type Names = Map<LanguageCode, string>;
 type Counts = Pick<ProductSyncTotals, 'created' | 'updated' | 'unchanged' | 'productsCreated'>;
@@ -199,6 +206,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 categoryTree,
                 localeMapping: settings.localeMapping,
                 nameAttribute: settings.productNameAttribute,
+                descriptionAttribute: settings.productDescriptionAttribute,
+                priceAttribute: settings.productPriceAttribute,
                 identifierAttribute: null,
                 cursor: null,
                 page: 1,
@@ -350,6 +359,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         counts: Counts,
     ): Promise<SyncedProduct> {
         const names = await this.productNames(ctx, target, lookups, run);
+        const descriptions = this.descriptions(ctx, target, run);
         let existing = await this.connection.getRepository(ctx, Product).findOne({
             where: { customFields: { [target.field]: target.value } },
             relations: ['translations', 'optionGroups', 'optionGroups.options'],
@@ -369,7 +379,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     languageCode,
                     name,
                     slug: name,
-                    description: '',
+                    description: descriptions?.get(languageCode) ?? '',
                 })),
                 customFields: { [target.field]: target.value },
             });
@@ -377,17 +387,24 @@ export class AkeneoProductSyncService implements OnModuleInit {
             return { id: created.id, names, groups: new Map() };
         }
 
-        const current = new Map(existing.translations.map(t => [t.languageCode, t.name]));
-        const changed = [...names].filter(([lang, name]) => current.get(lang) !== name);
+        const current = new Map(existing.translations.map(t => [t.languageCode, t]));
+        const changed = [...names].filter(([lang, name]) => {
+            const translation = current.get(lang);
+            const description = descriptions?.get(lang);
+            return (
+                translation?.name !== name || (description != null && translation.description !== description)
+            );
+        });
         if (changed.length) {
             await this.productService.update(ctx, {
                 id: existing.id,
                 // New languages need a slug; existing ones keep theirs so URLs stay stable
-                translations: changed.map(([languageCode, name]) =>
-                    current.has(languageCode)
-                        ? { languageCode, name }
-                        : { languageCode, name, slug: name, description: '' },
-                ),
+                translations: changed.map(([languageCode, name]) => {
+                    const description = descriptions?.get(languageCode);
+                    return current.has(languageCode)
+                        ? { languageCode, name, ...(description != null ? { description } : {}) }
+                        : { languageCode, name, slug: name, description: description ?? '' };
+                }),
             });
         }
         const groups = new Map(
@@ -482,6 +499,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         const sku = this.sku(item, run);
         const names = this.variantNames(product.names, options);
         const optionIds = options.map(o => o.id);
+        const prices = this.prices(ctx, item, run);
 
         if (existing?.deletedAt) {
             await this.releaseVariant(ctx, existing.id);
@@ -501,6 +519,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     optionIds,
                     enabled: item.enabled,
                     translations: this.translations(names),
+                    ...(prices?.length ? { prices } : {}),
                     customFields: { akeneoUuid: item.uuid },
                 },
             ]);
@@ -515,7 +534,14 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 .map(o => String(o.id))
                 .sort()
                 .join();
+        const currentPrices = new Map(
+            existing.productVariantPrices
+                .filter(p => idsAreEqual(p.channelId, ctx.channelId))
+                .map(p => [p.currencyCode as string, p.price]),
+        );
+        const pricesChanged = !!prices?.some(p => currentPrices.get(p.currencyCode) !== p.price);
         if (
+            !pricesChanged &&
             existing.sku === sku &&
             existing.enabled === item.enabled &&
             !changedNames.length &&
@@ -529,6 +555,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 sku,
                 enabled: item.enabled,
                 ...(optionsChanged ? { optionIds } : {}),
+                ...(pricesChanged ? { prices } : {}),
                 ...(changedNames.length ? { translations: this.translations(new Map(changedNames)) } : {}),
             },
         ]);
@@ -654,6 +681,39 @@ export class AkeneoProductSyncService implements OnModuleInit {
         return names;
     }
 
+    /** Description per name language; undefined when descriptions are left to Vendure. */
+    private descriptions(ctx: RequestContext, target: Target, run: Run): Names | undefined {
+        if (!run.descriptionAttribute) return undefined;
+        const descriptions: Names = new Map();
+        for (const { languageCode, locale } of run.localeMapping) {
+            descriptions.set(
+                languageCode,
+                pickText(target.values, run.descriptionAttribute, locale, run.akeneoChannel) ?? '',
+            );
+        }
+        return descriptions;
+    }
+
+    /**
+     * Prices for the channel's currencies that Akeneo has an amount for; undefined when prices are
+     * left to Vendure. Amounts are converted to Vendure's integer minor units.
+     */
+    private prices(ctx: RequestContext, item: AkeneoProduct, run: Run) {
+        if (!run.priceAttribute) return undefined;
+        const data = pickValue(item.values, run.priceAttribute, null, run.akeneoChannel)?.data;
+        if (!Array.isArray(data)) return [];
+        const currencies = new Set<string>(
+            ctx.channel.availableCurrencyCodes ?? [ctx.channel.defaultCurrencyCode],
+        );
+        const factor = 10 ** (this.configService.entityOptions.moneyStrategy?.precision ?? 2);
+        return (data as Array<{ amount: string | number | null; currency: string }>)
+            .filter(p => p.amount != null && p.amount !== '' && currencies.has(p.currency))
+            .map(p => ({
+                currencyCode: p.currency as CurrencyCode,
+                price: Math.round(Number(p.amount) * factor),
+            }));
+    }
+
     private sku(item: AkeneoProduct, run: Run): string {
         return (
             (run.identifierAttribute &&
@@ -693,7 +753,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         if (!uuids.length) return new Map<string, ProductVariant>();
         const variants = await this.connection.getRepository(ctx, ProductVariant).find({
             where: { customFields: { akeneoUuid: In(uuids) } },
-            relations: ['translations', 'options', 'product'],
+            relations: ['translations', 'options', 'product', 'productVariantPrices'],
         });
         return new Map(variants.map(v => [v.customFields.akeneoUuid as string, v]));
     }

@@ -35,8 +35,8 @@ export class AkeneoSyncAdminResolver {
 
     @Query()
     @Allow(manageAkeneoSyncPermission.Permission)
-    akeneoTextAttributes(@Ctx() ctx: RequestContext): Promise<AkeneoAttributeChoice[]> {
-        return this.syncSettingsService.getTextAttributeOptions(ctx);
+    akeneoAttributeChoices(@Ctx() ctx: RequestContext): Promise<AkeneoAttributeChoice[]> {
+        return this.syncSettingsService.getAttributeChoices(ctx);
     }
 
     @Query()

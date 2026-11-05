@@ -33,6 +33,10 @@ export const adminApiExtensions = gql`
         includeCategoryRoot: Boolean!
         "Text attribute used as product name; null uses each family's label attribute"
         productNameAttribute: String
+        "Text attribute used as product description; null leaves descriptions to Vendure"
+        productDescriptionAttribute: String
+        "Price collection attribute used as variant prices; null leaves prices to Vendure"
+        productPriceAttribute: String
     }
 
     "Which Akeneo locale feeds a Vendure language"
@@ -109,6 +113,10 @@ export const adminApiExtensions = gql`
         enabled: Boolean!
         "Null uses each family's label attribute"
         productNameAttribute: String
+        "Null leaves descriptions to Vendure"
+        productDescriptionAttribute: String
+        "Null leaves prices to Vendure"
+        productPriceAttribute: String
     }
 
     type AkeneoAttributeChoice {
@@ -160,8 +168,8 @@ export const adminApiExtensions = gql`
         akeneoCategoryTrees: [AkeneoCategoryTreeOption!]!
         "Suggested locale for each language of the active channel"
         akeneoSuggestedLocaleMapping(channelCode: String!): [AkeneoLocaleMapping!]!
-        "Text and textarea attributes of the connected Akeneo instance, read live"
-        akeneoTextAttributes: [AkeneoAttributeChoice!]!
+        "Text, textarea and price attributes of the connected Akeneo instance, read live"
+        akeneoAttributeChoices: [AkeneoAttributeChoice!]!
         "Null if no category sync has run for this channel yet"
         akeneoCategorySyncStatus: AkeneoCategorySyncStatus
         "Null if no product sync has run for this channel yet"
