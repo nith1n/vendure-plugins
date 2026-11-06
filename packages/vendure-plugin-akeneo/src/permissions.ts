@@ -1,9 +1,13 @@
 import { PermissionDefinition } from '@vendure/core';
 
 /**
- * Grants the ability to view and manage the Akeneo connection settings and to test credentials.
+ * @description
+ * Grants everything the plugin offers: the Akeneo connection and sync settings, running syncs and
+ * cleanup, and their status.
+ *
+ * @category Plugin
  */
 export const manageAkeneoSyncPermission = new PermissionDefinition({
     name: 'ManageAkeneoSync',
-    description: 'Allows viewing and updating Akeneo Cloud API connection settings',
+    description: 'Allows configuring and running the Akeneo sync',
 });

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0
+## 0.1.0 (unreleased)
 
 First release. Syncs run on demand from the dashboard (Settings > Akeneo Sync).
 
