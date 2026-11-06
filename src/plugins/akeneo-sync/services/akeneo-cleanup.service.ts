@@ -15,6 +15,9 @@ import {
     Logger,
     Product,
     ProductAsset,
+    ProductOption,
+    ProductOptionGroupService,
+    ProductOptionService,
     ProductService,
     ProductVariant,
     ProductVariantAsset,
@@ -24,9 +27,9 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
-import { JobState } from '@vendure/common/lib/generated-types';
+import { DeletionResult, JobState } from '@vendure/common/lib/generated-types';
 import { randomUUID } from 'crypto';
-import { In, IsNull, Not } from 'typeorm';
+import { In, IsNull, Not, ObjectLiteral, ObjectType } from 'typeorm';
 
 import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
 import { findMainIdentifierAttribute } from '../akeneo/akeneo-lookups';
@@ -67,12 +70,16 @@ export type CleanupPlan = {
     products: CleanupKind;
     /** Stale variants of products that stay (other variants are still in Akeneo). */
     variants: CleanupKind;
+    /** Options no variant uses any more, in option groups that stay. */
+    options: CleanupKind;
+    /** Option groups none of a product's variants use; ids are `productId:groupId`. */
+    optionGroups: CleanupKind;
     collections: CleanupKind;
     assets: CleanupKind;
     kept: CleanupKept[];
 };
 
-export type CleanupRemoved = { products: number; variants: number; collections: number; assets: number };
+export type CleanupRemoved = Record<(typeof KINDS)[number], number>;
 
 type CleanupJobData = SyncRunJobData & {
     ctx: SerializedRequestContext;
@@ -94,7 +101,9 @@ export interface CleanupStatus {
     removed: CleanupRemoved | null;
 }
 
-const KINDS = ['products', 'variants', 'collections', 'assets'] as const;
+const KINDS = ['products', 'variants', 'options', 'optionGroups', 'collections', 'assets'] as const;
+/** Ids per `IN (...)` query, well below database parameter limits. */
+const ID_CHUNK = 500;
 const MAX_EXAMPLES = 5;
 
 /**
@@ -120,6 +129,8 @@ export class AkeneoCleanupService implements OnModuleInit {
         private productService: ProductService,
         private productVariantService: ProductVariantService,
         private collectionService: CollectionService,
+        private productOptionService: ProductOptionService,
+        private productOptionGroupService: ProductOptionGroupService,
         private assetService: AssetService,
         private akeneoApiService: AkeneoApiService,
         private connectionSettingsService: AkeneoConnectionSettingsService,
@@ -159,7 +170,8 @@ export class AkeneoCleanupService implements OnModuleInit {
             finishedAt: state === 'RUNNING' ? null : (latest.settledAt ?? null),
             error: state === 'FAILED' ? errorText(latest.error) : null,
             plan: result?.plan ?? null,
-            removed: result?.removed ?? null,
+            // Results from before options were cleaned up have no option counts
+            removed: result?.removed ? { ...emptyRemoved(), ...result.removed } : null,
         };
     }
 
@@ -182,11 +194,14 @@ export class AkeneoCleanupService implements OnModuleInit {
         const plan: CleanupPlan = {
             products: emptyKind(),
             variants: emptyKind(),
+            options: emptyKind(),
+            optionGroups: emptyKind(),
             collections: emptyKind(),
             assets: emptyKind(),
             kept: [],
         };
         await this.scanProducts(ctx, client, settings, plan);
+        await this.scanOptions(ctx, plan);
         await this.scanCollections(ctx, client, settings, plan);
         await this.scanAssets(ctx, plan);
         return plan;
@@ -217,51 +232,138 @@ export class AkeneoCleanupService implements OnModuleInit {
             for (const product of page.items) live.add(product.uuid);
         }
 
-        const variants = await this.connection.getRepository(ctx, ProductVariant).find({
-            where: {
-                deletedAt: IsNull(),
-                customFields: { akeneoUuid: Not(IsNull()) },
-                channels: { id: ctx.channelId },
-                // Only Products this channel's sync owns; others are often in the default channel too
-                product: { customFields: { akeneoChannelId: String(ctx.channelId) } },
-            },
-            relations: ['product', 'product.channels', 'product.translations', 'product.variants'],
-        });
-        if (!live.size && variants.length) {
+        // Only the columns needed: a large catalog has many synced variants
+        const synced: Array<{ id: ID; sku: string; productId: ID; uuid: string }> = await this.connection
+            .getRepository(ctx, ProductVariant)
+            .createQueryBuilder('variant')
+            .innerJoin('variant.product', 'product')
+            .innerJoin('variant.channels', 'channel', 'channel.id = :channelId', { channelId: ctx.channelId })
+            .where('variant.deletedAt IS NULL')
+            .andWhere('variant.customFields.akeneoUuid IS NOT NULL')
+            // Only Products this channel's sync owns; others are often in the default channel too
+            .andWhere('product.customFields.akeneoChannelId = :owner', { owner: String(ctx.channelId) })
+            .select('variant.id', 'id')
+            .addSelect('variant.sku', 'sku')
+            .addSelect('variant.productId', 'productId')
+            .addSelect('variant.customFields.akeneoUuid', 'uuid')
+            .getRawMany();
+        if (!live.size && synced.length) {
             throw new UserInputError(
                 `Akeneo returned no products for channel "${channelCode}", so nothing was marked. ` +
                     'Check the Akeneo channel and its category tree.',
             );
         }
 
-        const stale = variants.filter(v => !live.has(v.customFields.akeneoUuid as string));
-        const staleIds = new Set(stale.map(v => String(v.id)));
-        const defaultChannel = await this.channelService.getDefaultChannel(ctx);
-        const byProduct = new Map<string, ProductVariant[]>();
-        for (const variant of stale) {
+        const byProduct = new Map<string, typeof synced>();
+        for (const variant of synced.filter(v => !live.has(v.uuid))) {
             const key = String(variant.productId);
             byProduct.set(key, [...(byProduct.get(key) ?? []), variant]);
         }
-        for (const [productId, productStale] of byProduct) {
-            const product = productStale[0].product;
-            const name = translatedName(product, ctx);
-            const otherChannels = product.channels.filter(
-                c => !idsAreEqual(c.id, ctx.channelId) && !idsAreEqual(c.id, defaultChannel.id),
-            );
-            if (otherChannels.length) {
-                plan.kept.push({
-                    kind: 'product',
-                    name,
-                    reason: `Also in channel ${otherChannels.map(c => c.code).join(', ')}`,
-                });
-                continue;
+        if (!byProduct.size) return;
+
+        const defaultChannel = await this.channelService.getDefaultChannel(ctx);
+        for (const productIds of chunks([...byProduct.keys()])) {
+            const products = await this.connection.getRepository(ctx, Product).find({
+                where: { id: In(productIds) },
+                relations: ['channels', 'translations'],
+            });
+            const liveCounts: Array<{ productId: ID; count: string }> = await this.connection
+                .getRepository(ctx, ProductVariant)
+                .createQueryBuilder('variant')
+                .where('variant.productId IN (:...productIds)', { productIds })
+                .andWhere('variant.deletedAt IS NULL')
+                .select('variant.productId', 'productId')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('variant.productId')
+                .getRawMany();
+            const liveCount = new Map(liveCounts.map(c => [String(c.productId), Number(c.count)]));
+
+            for (const product of products) {
+                const productStale = byProduct.get(String(product.id)) ?? [];
+                const name = translatedName(product, ctx);
+                const otherChannels = product.channels.filter(
+                    c => !idsAreEqual(c.id, ctx.channelId) && !idsAreEqual(c.id, defaultChannel.id),
+                );
+                if (otherChannels.length) {
+                    plan.kept.push({
+                        kind: 'product',
+                        name,
+                        reason: `Also in channel ${otherChannels.map(c => c.code).join(', ')}`,
+                    });
+                } else if ((liveCount.get(String(product.id)) ?? 0) > productStale.length) {
+                    // Other variants are still in Akeneo (or were added in Vendure)
+                    for (const variant of productStale) {
+                        add(plan.variants, variant.id, `${name} (${variant.sku})`);
+                    }
+                } else {
+                    add(plan.products, product.id, name);
+                }
             }
-            const remaining = product.variants.filter(v => !v.deletedAt && !staleIds.has(String(v.id)));
-            if (remaining.length) {
-                for (const variant of productStale)
-                    add(plan.variants, variant.id, `${name} (${variant.sku})`);
+        }
+    }
+
+    /**
+     * Options of this channel's synced Products that no variant uses any more, e.g. after a colour
+     * was dropped in Akeneo. A group none of the Product's variants use goes as a whole. Products
+     * and variants this cleanup removes don't count as using them.
+     */
+    private async scanOptions(ctx: RequestContext, plan: CleanupPlan) {
+        const removedProducts = new Set(plan.products.ids);
+        const removedVariants = new Set(plan.variants.ids);
+        const options: Array<{
+            optionId: ID;
+            optionCode: string;
+            groupId: ID;
+            groupCode: string;
+            productId: ID;
+        }> = await this.connection
+            .getRepository(ctx, ProductOption)
+            .createQueryBuilder('option')
+            .innerJoin('option.group', 'grp')
+            .innerJoin('grp.products', 'product')
+            .where('option.deletedAt IS NULL')
+            .andWhere('grp.deletedAt IS NULL')
+            .andWhere('product.deletedAt IS NULL')
+            .andWhere('product.customFields.akeneoChannelId = :owner', { owner: String(ctx.channelId) })
+            .select('option.id', 'optionId')
+            .addSelect('option.code', 'optionCode')
+            .addSelect('grp.id', 'groupId')
+            .addSelect('grp.code', 'groupCode')
+            .addSelect('product.id', 'productId')
+            .getRawMany();
+        const candidates = options.filter(o => !removedProducts.has(String(o.productId)));
+        if (!candidates.length) return;
+
+        const used = new Set<string>();
+        for (const optionIds of chunks(unique(candidates.map(o => String(o.optionId))))) {
+            const rows: Array<{ optionId: ID; variantId: ID; productId: ID }> = await this.connection
+                .getRepository(ctx, ProductVariant)
+                .createQueryBuilder('variant')
+                .innerJoin('variant.options', 'option')
+                .where('option.id IN (:...optionIds)', { optionIds })
+                .andWhere('variant.deletedAt IS NULL')
+                .select('option.id', 'optionId')
+                .addSelect('variant.id', 'variantId')
+                .addSelect('variant.productId', 'productId')
+                .getRawMany();
+            for (const row of rows) {
+                const removed =
+                    removedVariants.has(String(row.variantId)) || removedProducts.has(String(row.productId));
+                if (!removed) used.add(String(row.optionId));
+            }
+        }
+
+        const groups = new Map<string, typeof candidates>();
+        for (const option of candidates) {
+            const key = `${String(option.productId)}:${String(option.groupId)}`;
+            groups.set(key, [...(groups.get(key) ?? []), option]);
+        }
+        for (const [key, groupOptions] of groups) {
+            const unused = groupOptions.filter(o => !used.has(String(o.optionId)));
+            if (unused.length === groupOptions.length) {
+                add(plan.optionGroups, key, groupOptions[0].groupCode);
             } else {
-                add(plan.products, productId, name);
+                for (const o of unused) add(plan.options, o.optionId, `${o.groupCode}: ${o.optionCode}`);
             }
         }
     }
@@ -336,50 +438,72 @@ export class AkeneoCleanupService implements OnModuleInit {
         const removedVariants = new Set(plan.variants.ids);
         const removedCollections = await this.withDescendants(ctx, plan.collections.ids);
         const used = new Set<string>();
+        const repo = <T extends ObjectLiteral>(entity: ObjectType<T>) =>
+            this.connection.getRepository(ctx, entity);
 
-        const products = await this.connection
-            .getRepository(ctx, Product)
-            .find({ where: { deletedAt: IsNull() }, select: ['id', 'featuredAssetId'] });
-        for (const p of products) {
-            if (!removedProducts.has(String(p.id)) && p.featuredAssetId) used.add(String(p.featuredAssetId));
-        }
-        const variants = await this.connection.getRepository(ctx, ProductVariant).find({
-            where: { deletedAt: IsNull() },
-            select: ['id', 'productId', 'featuredAssetId'],
-        });
-        const liveVariant = (v: { id: ID; productId: ID }) =>
-            !removedVariants.has(String(v.id)) && !removedProducts.has(String(v.productId));
-        const liveVariantIds = new Set(variants.filter(liveVariant).map(v => String(v.id)));
-        for (const v of variants) {
-            if (liveVariant(v) && v.featuredAssetId) used.add(String(v.featuredAssetId));
-        }
-        const productAssets = await this.connection
-            .getRepository(ctx, ProductAsset)
-            .createQueryBuilder('pa')
-            .innerJoin('pa.product', 'product', 'product.deletedAt IS NULL')
-            .select(['pa.assetId', 'pa.productId'])
-            .getMany();
-        for (const pa of productAssets) {
-            if (!removedProducts.has(String(pa.productId))) used.add(String(pa.assetId));
-        }
-        const variantAssets = await this.connection
-            .getRepository(ctx, ProductVariantAsset)
-            .find({ select: ['assetId', 'productVariantId'] });
-        for (const va of variantAssets) {
-            if (liveVariantIds.has(String(va.productVariantId))) used.add(String(va.assetId));
-        }
-        const collections = await this.connection
-            .getRepository(ctx, Collection)
-            .find({ relations: ['featuredAsset'], select: { id: true, featuredAsset: { id: true } } });
-        for (const c of collections) {
-            if (!removedCollections.has(String(c.id)) && c.featuredAsset)
-                used.add(String(c.featuredAsset.id));
-        }
-        const collectionAssets = await this.connection
-            .getRepository(ctx, CollectionAsset)
-            .find({ select: ['assetId', 'collectionId'] });
-        for (const ca of collectionAssets) {
-            if (!removedCollections.has(String(ca.collectionId))) used.add(String(ca.assetId));
+        // Only usage of these Akeneo images, so the queries stay small however big the catalog is
+        for (const assetIds of chunks(assets.map(a => String(a.id)))) {
+            const products: Array<{ assetId: ID; productId: ID }> = [
+                ...(await repo(Product)
+                    .createQueryBuilder('product')
+                    .where('product.featuredAssetId IN (:...assetIds)', { assetIds })
+                    .andWhere('product.deletedAt IS NULL')
+                    .select('product.featuredAssetId', 'assetId')
+                    .addSelect('product.id', 'productId')
+                    .getRawMany<{ assetId: ID; productId: ID }>()),
+                ...(await repo(ProductAsset)
+                    .createQueryBuilder('pa')
+                    .innerJoin('pa.product', 'product', 'product.deletedAt IS NULL')
+                    .where('pa.assetId IN (:...assetIds)', { assetIds })
+                    .select('pa.assetId', 'assetId')
+                    .addSelect('pa.productId', 'productId')
+                    .getRawMany<{ assetId: ID; productId: ID }>()),
+            ];
+            for (const p of products) {
+                if (!removedProducts.has(String(p.productId))) used.add(String(p.assetId));
+            }
+
+            const variants: Array<{ assetId: ID; variantId: ID; productId: ID }> = [
+                ...(await repo(ProductVariant)
+                    .createQueryBuilder('variant')
+                    .where('variant.featuredAssetId IN (:...assetIds)', { assetIds })
+                    .andWhere('variant.deletedAt IS NULL')
+                    .select('variant.featuredAssetId', 'assetId')
+                    .addSelect('variant.id', 'variantId')
+                    .addSelect('variant.productId', 'productId')
+                    .getRawMany<{ assetId: ID; variantId: ID; productId: ID }>()),
+                ...(await repo(ProductVariantAsset)
+                    .createQueryBuilder('va')
+                    .innerJoin('va.productVariant', 'variant', 'variant.deletedAt IS NULL')
+                    .where('va.assetId IN (:...assetIds)', { assetIds })
+                    .select('va.assetId', 'assetId')
+                    .addSelect('variant.id', 'variantId')
+                    .addSelect('variant.productId', 'productId')
+                    .getRawMany<{ assetId: ID; variantId: ID; productId: ID }>()),
+            ];
+            for (const v of variants) {
+                const removed =
+                    removedVariants.has(String(v.variantId)) || removedProducts.has(String(v.productId));
+                if (!removed) used.add(String(v.assetId));
+            }
+
+            const collections: Array<{ assetId: ID; collectionId: ID }> = [
+                ...(await repo(Collection)
+                    .createQueryBuilder('collection')
+                    .where('collection.featuredAssetId IN (:...assetIds)', { assetIds })
+                    .select('collection.featuredAssetId', 'assetId')
+                    .addSelect('collection.id', 'collectionId')
+                    .getRawMany<{ assetId: ID; collectionId: ID }>()),
+                ...(await repo(CollectionAsset)
+                    .createQueryBuilder('ca')
+                    .where('ca.assetId IN (:...assetIds)', { assetIds })
+                    .select('ca.assetId', 'assetId')
+                    .addSelect('ca.collectionId', 'collectionId')
+                    .getRawMany<{ assetId: ID; collectionId: ID }>()),
+            ];
+            for (const c of collections) {
+                if (!removedCollections.has(String(c.collectionId))) used.add(String(c.assetId));
+            }
         }
 
         for (const asset of assets) {
@@ -388,7 +512,7 @@ export class AkeneoCleanupService implements OnModuleInit {
     }
 
     private async remove(ctx: RequestContext, plan: CleanupPlan): Promise<CleanupRemoved> {
-        const removed: CleanupRemoved = { products: 0, variants: 0, collections: 0, assets: 0 };
+        const removed = emptyRemoved();
 
         await this.connection.withTransaction(ctx, async txCtx => {
             const variantIds = plan.variants.ids;
@@ -409,6 +533,24 @@ export class AkeneoCleanupService implements OnModuleInit {
                     variants.map(v => v.id),
                 );
                 removed.products++;
+            });
+        }
+        // Options after variants: removing those is what frees them
+        for (const optionId of plan.options.ids) {
+            await this.connection.withTransaction(ctx, async txCtx => {
+                const result = await this.productOptionService.delete(txCtx, optionId);
+                if (result.result === DeletionResult.DELETED) removed.options++;
+            });
+        }
+        for (const key of plan.optionGroups.ids) {
+            const [productId, groupId] = key.split(':');
+            await this.connection.withTransaction(ctx, async txCtx => {
+                const result = await this.productOptionGroupService.deleteGroupAndOptionsFromProduct(
+                    txCtx,
+                    groupId,
+                    productId,
+                );
+                if (result.result === DeletionResult.DELETED) removed.optionGroups++;
             });
         }
         for (const collectionId of plan.collections.ids) {
@@ -488,6 +630,10 @@ export class AkeneoCleanupService implements OnModuleInit {
     }
 }
 
+function emptyRemoved(): CleanupRemoved {
+    return { products: 0, variants: 0, options: 0, optionGroups: 0, collections: 0, assets: 0 };
+}
+
 function emptyKind(): CleanupKind {
     return { ids: [], sizes: [], examples: [] };
 }
@@ -507,7 +653,8 @@ export function kindCount(kind: CleanupKind): number {
 /** Only items in both plans; examples are rebuilt from the kept ids' positions. */
 function intersect(fresh: CleanupPlan, seen: CleanupPlan): CleanupPlan {
     const pick = (kind: (typeof KINDS)[number]): CleanupKind => {
-        const allowed = new Set(seen[kind].ids);
+        // Scans from before a kind existed have nothing of it to remove
+        const allowed = new Set(seen[kind]?.ids ?? []);
         const keep = fresh[kind].ids.map(id => allowed.has(id));
         return {
             ids: fresh[kind].ids.filter((_, i) => keep[i]),
@@ -518,6 +665,8 @@ function intersect(fresh: CleanupPlan, seen: CleanupPlan): CleanupPlan {
     return {
         products: pick('products'),
         variants: pick('variants'),
+        options: pick('options'),
+        optionGroups: pick('optionGroups'),
         collections: pick('collections'),
         assets: pick('assets'),
         kept: fresh.kept,
@@ -534,4 +683,14 @@ function translatedName(
         translations[0]?.name ??
         String(entity.id)
     );
+}
+
+function chunks<T>(items: T[]): T[][] {
+    const result: T[][] = [];
+    for (let i = 0; i < items.length; i += ID_CHUNK) result.push(items.slice(i, i + ID_CHUNK));
+    return result;
+}
+
+function unique<T>(items: T[]): T[] {
+    return [...new Set(items)];
 }

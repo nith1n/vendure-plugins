@@ -107,6 +107,8 @@ export const adminApiExtensions = gql`
     type AkeneoProductSyncStatus {
         runId: String!
         state: AkeneoSyncRunState!
+        "Set for a changes-only run: it synced the products updated in Akeneo after this time"
+        changesSince: DateTime
         pages: Int!
         "Akeneo products processed; each becomes one Vendure variant"
         products: Int!
@@ -115,6 +117,8 @@ export const adminApiExtensions = gql`
         unchanged: Int!
         "Vendure Products created (one per root product model or simple product)"
         productsCreated: Int!
+        "Existing Vendure Products whose names, descriptions or enabled state changed"
+        productsUpdated: Int!
         "Akeneo products left alone because another channel's sync owns their Vendure Product"
         skipped: Int!
         images: AkeneoImageSyncCounts!
@@ -164,6 +168,10 @@ export const adminApiExtensions = gql`
         products: AkeneoCleanupKind!
         "Variants no longer in Akeneo, of products that stay"
         variants: AkeneoCleanupKind!
+        "Options no variant uses any more, in option groups that stay"
+        options: AkeneoCleanupKind!
+        "Option groups none of a product's variants use any more"
+        optionGroups: AkeneoCleanupKind!
         "Collections of categories that are no longer synced, with their descendants"
         collections: AkeneoCleanupKind!
         "Akeneo images nothing uses"
@@ -174,6 +182,8 @@ export const adminApiExtensions = gql`
     type AkeneoCleanupRemoved {
         products: Int!
         variants: Int!
+        options: Int!
+        optionGroups: Int!
         collections: Int!
         assets: Int!
     }
@@ -279,6 +289,8 @@ export const adminApiExtensions = gql`
         akeneoCategorySyncStatus: AkeneoCategorySyncStatus
         "Null if no product sync has run for this channel yet"
         akeneoProductSyncStatus: AkeneoProductSyncStatus
+        "Since when a changes-only product sync would fetch; null when only a full sync is possible"
+        akeneoProductSyncChangesSince: DateTime
         "Null if no cleanup has run for this channel yet"
         akeneoCleanupStatus: AkeneoCleanupStatus
     }
@@ -291,7 +303,10 @@ export const adminApiExtensions = gql`
         "Queues a sync of the selected Akeneo category trees to Collections, one page per job."
         startAkeneoCategorySync: Job!
         "Queues a sync of the Akeneo channel's products to Products and ProductVariants, one page per job."
-        startAkeneoProductSync: Job!
+        startAkeneoProductSync(
+            "Only the Akeneo products updated since the last completed run with the current settings"
+            changesOnly: Boolean
+        ): Job!
         "Queues a scan for synced items Akeneo no longer has. Changes nothing."
         scanAkeneoLeftovers: Job!
         "Queues removal of what the given scan found and a fresh scan still finds."

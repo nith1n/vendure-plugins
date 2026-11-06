@@ -95,6 +95,20 @@ export class AkeneoConnectionSettings extends VendureEntity {
     /** Attributes for families that differ from the defaults above. */
     @Column({ type: 'simple-json', default: '[]' })
     familyOverrides: AkeneoFamilyOverride[];
+
+    /**
+     * Start of the last product sync run that completed. A "changes only" run fetches the Akeneo
+     * products updated since then.
+     */
+    @Column({ type: 'timestamp', nullable: true })
+    productSyncedFrom: Date | null;
+
+    /**
+     * The product mapping settings that run used. When they differ from the current ones, only a
+     * full sync brings every product up to date.
+     */
+    @Column({ type: 'varchar', length: 64, nullable: true })
+    productSyncFingerprint: string | null;
 }
 
 // Type aliases (not interfaces) so they satisfy the job queue's JsonCompatible data constraint

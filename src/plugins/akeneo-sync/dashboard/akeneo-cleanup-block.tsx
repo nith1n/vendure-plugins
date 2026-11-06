@@ -33,6 +33,8 @@ const QUERY_KEY = ['akeneoCleanupStatus'];
 const KINDS = [
     { key: 'products', label: 'Products' },
     { key: 'variants', label: 'Variants' },
+    { key: 'options', label: 'Options' },
+    { key: 'optionGroups', label: 'Option groups' },
     { key: 'collections', label: 'Collections' },
     { key: 'assets', label: 'Images' },
 ] as const;
@@ -49,6 +51,8 @@ function planCounts(plan: Plan) {
     return {
         products: plan.products.count,
         variants: plan.variants.count,
+        options: plan.options.count,
+        optionGroups: plan.optionGroups.count,
         collections: plan.collections.count,
         assets: plan.assets.count,
     };
@@ -103,8 +107,8 @@ export function AkeneoCleanupBlock({
     return (
         <div className="flex flex-col gap-3 text-sm">
             <p className="text-muted-foreground">
-                Finds products, collections and images the sync created that Akeneo no longer has. Nothing is
-                removed until you confirm.
+                Finds products, options, collections and images the sync created that Akeneo no longer has.
+                Nothing is removed until you confirm.
             </p>
             {status ? (
                 <StatusSummary status={status} />
@@ -227,6 +231,9 @@ function confirmText(counts: Record<(typeof KINDS)[number]['key'], number>): str
     if (counts.products || counts.variants) {
         parts.push('Products and variants are soft-deleted, so past orders keep working.');
     }
+    if (counts.options || counts.optionGroups) {
+        parts.push('Options still used by deleted variants are soft-deleted, the rest are deleted.');
+    }
     if (counts.collections || counts.assets) parts.push('Collections and images are deleted for good.');
     parts.push('Anything that is back in Akeneo by then is left alone.');
     return parts.join(' ');
@@ -237,6 +244,8 @@ function describe(counts: Record<(typeof KINDS)[number]['key'], number>): string
     const nouns = {
         products: ['product', 'products'],
         variants: ['variant', 'variants'],
+        options: ['option', 'options'],
+        optionGroups: ['option group', 'option groups'],
         collections: ['collection', 'collections'],
         assets: ['image', 'images'],
     } as const;

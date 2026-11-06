@@ -81,8 +81,14 @@ export class AkeneoSyncAdminResolver {
 
     @Mutation()
     @Allow(manageAkeneoSyncPermission.Permission)
-    startAkeneoProductSync(@Ctx() ctx: RequestContext) {
-        return this.productSyncService.startSync(ctx);
+    startAkeneoProductSync(@Ctx() ctx: RequestContext, @Args() args: { changesOnly?: boolean | null }) {
+        return this.productSyncService.startSync(ctx, !!args.changesOnly);
+    }
+
+    @Query()
+    @Allow(manageAkeneoSyncPermission.Permission)
+    akeneoProductSyncChangesSince(@Ctx() ctx: RequestContext): Promise<Date | null> {
+        return this.productSyncService.getChangesSince(ctx);
     }
 
     @Query()
@@ -117,6 +123,9 @@ function toPlanOutput(plan: CleanupPlan) {
     return {
         products: kind(plan.products),
         variants: kind(plan.variants),
+        // Scans from before options were cleaned up have none
+        options: plan.options ? kind(plan.options) : { count: 0, examples: [] },
+        optionGroups: plan.optionGroups ? kind(plan.optionGroups) : { count: 0, examples: [] },
         collections: kind(plan.collections),
         assets: kind(plan.assets),
         kept: plan.kept,

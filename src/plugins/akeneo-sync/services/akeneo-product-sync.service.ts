@@ -20,14 +20,18 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { In, IsNull } from 'typeorm';
 
 import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups, findMainIdentifierAttribute, pickText, pickValue } from '../akeneo/akeneo-lookups';
 import { AkeneoLabels, AkeneoProduct, AkeneoValue, AkeneoValues } from '../akeneo/akeneo-types';
 import { CLEANUP_QUEUE, PRODUCT_SYNC_QUEUE, loggerCtx } from '../constants';
-import { AkeneoFamilyOverride, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
+import {
+    AkeneoConnectionSettings,
+    AkeneoFamilyOverride,
+    AkeneoLocaleMapping,
+} from '../entities/akeneo-connection-settings.entity';
 import { AkeneoVariantCategory } from '../entities/akeneo-variant-category.entity';
 import {
     ACTIVE_JOB_STATES,
@@ -59,6 +63,8 @@ type ProductSyncTotals = {
     updated: number;
     unchanged: number;
     productsCreated: number;
+    /** Existing Vendure Products whose names, descriptions or enabled state changed. */
+    productsUpdated: number;
     /** Akeneo products whose Vendure Product another channel's sync owns. */
     skipped: number;
 };
@@ -75,6 +81,10 @@ interface ProductSyncJobData extends SyncRunJobData {
     priceAttribute: string | null;
     syncImages: boolean;
     familyOverrides: AkeneoFamilyOverride[];
+    /** Akeneo `updated` lower bound (UTC, `YYYY-MM-DD hh:mm:ss`); null syncs every product. */
+    since: string | null;
+    /** Fingerprint of the settings above, recorded when the run completes. */
+    fingerprint: string;
     /** Resolved by the first page; null means SKUs fall back to the product UUID. */
     identifierAttribute: string | null;
     /** `next` URL of the previous page; null for the first page. */
@@ -91,6 +101,8 @@ export interface ProductSyncPageResult {
 
 export interface ProductSyncStatus extends ProductSyncTotals {
     runId: string;
+    /** Set for a "changes only" run: the products updated in Akeneo after this time. */
+    changesSince: Date | null;
     images: ImageSyncStatus;
     state: SyncRunState;
     startedAt: Date;
@@ -116,7 +128,10 @@ type Run = Pick<
     | 'identifierAttribute'
 >;
 type Names = Map<LanguageCode, string>;
-type Counts = Pick<ProductSyncTotals, 'created' | 'updated' | 'unchanged' | 'productsCreated' | 'skipped'>;
+type Counts = Pick<
+    ProductSyncTotals,
+    'created' | 'updated' | 'unchanged' | 'productsCreated' | 'productsUpdated' | 'skipped'
+>;
 /** Image targets of a page by `product:<id>` / `variant:<id>`. */
 type ImageTargets = Map<string, AkeneoImageTarget>;
 
@@ -136,6 +151,8 @@ interface Target {
 interface SyncedProduct {
     id: ID;
     names: Names;
+    /** Its names or descriptions were updated by this page. */
+    changed: boolean;
     /** Option group code (axis attribute) -> group id and its options by code. */
     groups: Map<string, { id: ID; options: Map<string, ID> }>;
 }
@@ -146,6 +163,8 @@ interface AxisOption {
 }
 
 const QUEUE_NAME = PRODUCT_SYNC_QUEUE;
+/** Overlap with the previous run, against clock differences between Vendure and Akeneo. */
+const SINCE_MARGIN_MS = 5 * 60_000;
 const JOB_RETRIES = 3;
 const EMPTY_TOTALS: ProductSyncTotals = {
     pages: 0,
@@ -154,6 +173,7 @@ const EMPTY_TOTALS: ProductSyncTotals = {
     updated: 0,
     unchanged: 0,
     productsCreated: 0,
+    productsUpdated: 0,
     skipped: 0,
 };
 
@@ -196,7 +216,17 @@ export class AkeneoProductSyncService implements OnModuleInit {
         });
     }
 
-    async startSync(ctx: RequestContext) {
+    /**
+     * When a "changes only" run can start: the start of the last completed run, while the product
+     * settings are still the ones it used. Null means only a full sync brings everything up to date.
+     */
+    async getChangesSince(ctx: RequestContext): Promise<Date | null> {
+        const settings = await this.connectionSettingsService.findForChannel(ctx);
+        if (!settings?.productSyncedFrom || !settings.channelCode) return null;
+        return settings.productSyncFingerprint === fingerprint(settings) ? settings.productSyncedFrom : null;
+    }
+
+    async startSync(ctx: RequestContext, changesOnly = false) {
         const settings = await this.connectionSettingsService.findForChannel(ctx);
         if (!settings) throw new UserInputError('No Akeneo connection is configured for this channel');
         if (!settings.enabled) throw new UserInputError('Akeneo sync is disabled for this channel');
@@ -216,6 +246,17 @@ export class AkeneoProductSyncService implements OnModuleInit {
         if (!categoryTree)
             throw new UserInputError(`Akeneo channel "${settings.channelCode}" does not exist`);
 
+        let since: string | null = null;
+        if (changesOnly) {
+            const from = await this.getChangesSince(ctx);
+            if (!from) {
+                throw new UserInputError(
+                    'Run a full sync first: there is no completed sync with the current settings',
+                );
+            }
+            since = akeneoDateTime(new Date(from.getTime() - SINCE_MARGIN_MS));
+        }
+
         return this.queue.add(
             {
                 ctx: ctx.serialize(),
@@ -231,6 +272,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 priceAttribute: settings.productPriceAttribute,
                 syncImages: settings.syncImages,
                 familyOverrides: settings.familyOverrides,
+                since,
+                fingerprint: fingerprint(settings),
                 identifierAttribute: null,
                 cursor: null,
                 page: 1,
@@ -253,6 +296,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
             runId: latest.data.runId,
             state,
             ...totals,
+            productsUpdated: totals.productsUpdated ?? 0,
+            changesSince: latest.data.since ? new Date(`${latest.data.since.replace(' ', 'T')}Z`) : null,
             skipped: totals.skipped ?? 0,
             images,
             startedAt: new Date(latest.data.startedAt),
@@ -292,7 +337,11 @@ export class AkeneoProductSyncService implements OnModuleInit {
         const page = data.cursor
             ? await client.getPage<AkeneoProduct>(data.cursor)
             : await client.products({
-                  search: { categories: [{ operator: 'IN CHILDREN', value: [data.categoryTree] }] },
+                  search: {
+                      categories: [{ operator: 'IN CHILDREN', value: [data.categoryTree] }],
+                      // Akeneo also returns variants whose product model changed since then
+                      ...(data.since ? { updated: [{ operator: '>', value: data.since }] } : {}),
+                  },
                   scope: data.akeneoChannel,
                   locales: [...new Set(data.localeMapping.map(m => m.locale))],
               });
@@ -330,6 +379,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
             updated: data.totals.updated + counts.updated,
             unchanged: data.totals.unchanged + counts.unchanged,
             productsCreated: data.totals.productsCreated + counts.productsCreated,
+            productsUpdated: (data.totals.productsUpdated ?? 0) + counts.productsUpdated,
             // Runs queued before skipping existed have no count yet
             skipped: (data.totals.skipped ?? 0) + counts.skipped,
         };
@@ -339,6 +389,11 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 { retries: JOB_RETRIES },
             );
         } else {
+            // The next "changes only" run starts from this run's start, so nothing in between is missed
+            await this.connection.getRepository(ctx, AkeneoConnectionSettings).update(settings.id, {
+                productSyncedFrom: new Date(data.startedAt),
+                productSyncFingerprint: data.fingerprint ?? null,
+            });
             Logger.info(`Akeneo product sync finished after ${data.page} page(s)`, loggerCtx);
         }
         return { page: data.page, hasNextPage: !!page.next, totals };
@@ -351,7 +406,14 @@ export class AkeneoProductSyncService implements OnModuleInit {
         run: Run,
         imageTargets: ImageTargets,
     ): Promise<Counts> {
-        const counts: Counts = { created: 0, updated: 0, unchanged: 0, productsCreated: 0, skipped: 0 };
+        const counts: Counts = {
+            created: 0,
+            updated: 0,
+            unchanged: 0,
+            productsCreated: 0,
+            productsUpdated: 0,
+            skipped: 0,
+        };
         const variants = await this.findVariants(
             ctx,
             items.map(i => i.uuid),
@@ -395,7 +457,11 @@ export class AkeneoProductSyncService implements OnModuleInit {
             }
         }
         // Only where Akeneo changed a variant, so a Product disabled in Vendure stays disabled
-        await this.syncProductEnabled(ctx, enabledChanged);
+        const updatedProducts = await this.syncProductEnabled(ctx, enabledChanged);
+        for (const product of products.values()) {
+            if (product?.changed) updatedProducts.add(String(product.id));
+        }
+        counts.productsUpdated = updatedProducts.size;
         await this.reapplyCategoryCollections(ctx, changedCategories);
         return counts;
     }
@@ -471,7 +537,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 customFields: { [target.field]: target.value, akeneoChannelId: String(ctx.channelId) },
             });
             counts.productsCreated++;
-            return { id: created.id, names, groups: new Map() };
+            return { id: created.id, names, changed: false, groups: new Map() };
         }
 
         const current = new Map(existing.translations.map(t => [t.languageCode, t]));
@@ -505,7 +571,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     },
                 ]),
         );
-        return { id: existing.id, names, groups };
+        return { id: existing.id, names, changed: changed.length > 0, groups };
     }
 
     /** Finds or creates the option for this product's value of a variant axis. */
@@ -802,8 +868,9 @@ export class AkeneoProductSyncService implements OnModuleInit {
         }
     }
 
-    /** A Product is enabled when any of its variants is. */
-    private async syncProductEnabled(ctx: RequestContext, productIds: Set<ID>) {
+    /** A Product is enabled when any of its variants is. Returns the Products that changed. */
+    private async syncProductEnabled(ctx: RequestContext, productIds: Set<ID>): Promise<Set<string>> {
+        const changed = new Set<string>();
         for (const id of productIds) {
             const anyEnabled = await this.connection.getRepository(ctx, ProductVariant).exists({
                 where: { productId: id, enabled: true, deletedAt: IsNull() },
@@ -813,8 +880,10 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 .findOne({ where: { id }, select: ['id', 'enabled'] });
             if (product && product.enabled !== anyEnabled) {
                 await this.productService.update(ctx, { id, enabled: anyEnabled });
+                changed.add(String(id));
             }
         }
+        return changed;
     }
 
     /**
@@ -944,4 +1013,23 @@ function ownership(ctx: RequestContext, product: Product): 'mine' | 'other' | 'u
     const owner = product.customFields.akeneoChannelId;
     if (owner) return owner === String(ctx.channelId) ? 'mine' : 'other';
     return product.channels?.some(c => idsAreEqual(c.id, ctx.channelId)) ? 'unclaimed' : 'other';
+}
+
+/** The settings that decide what a synced product looks like. */
+function fingerprint(settings: AkeneoConnectionSettings): string {
+    const relevant = {
+        channelCode: settings.channelCode,
+        localeMapping: settings.localeMapping,
+        nameAttribute: settings.productNameAttribute,
+        descriptionAttribute: settings.productDescriptionAttribute,
+        priceAttribute: settings.productPriceAttribute,
+        syncImages: settings.syncImages,
+        familyOverrides: settings.familyOverrides,
+    };
+    return createHash('sha256').update(JSON.stringify(relevant)).digest('hex');
+}
+
+/** Akeneo's date filter format; Akeneo Cloud compares in UTC. */
+function akeneoDateTime(date: Date): string {
+    return date.toISOString().slice(0, 19).replace('T', ' ');
 }

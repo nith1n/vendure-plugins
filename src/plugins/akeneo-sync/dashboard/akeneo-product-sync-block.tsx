@@ -9,7 +9,10 @@ import {
 import { SyncRunBlock } from './sync-run-block';
 
 type Settings = NonNullable<ResultOf<typeof akeneoSettingsQuery>['akeneoConnectionSettings']>;
-type Status = NonNullable<ResultOf<typeof akeneoProductSyncStatusQuery>['akeneoProductSyncStatus']>;
+type Status = NonNullable<ResultOf<typeof akeneoProductSyncStatusQuery>['akeneoProductSyncStatus']> & {
+    /** Since when a changes-only run would fetch; null when only a full sync is possible. */
+    changesAvailableSince: string | null;
+};
 
 /** Why the sync can't start yet, or null when it can. */
 function blockedReason(settings: Settings | null | undefined, hasUnsavedSettings: boolean): string | null {
@@ -18,6 +21,10 @@ function blockedReason(settings: Settings | null | undefined, hasUnsavedSettings
     if (!settings.enabled) return 'Sync is disabled for this channel.';
     if (!settings.channelCode) return 'Select an Akeneo channel in the sync settings.';
     return null;
+}
+
+function plural(count: number, noun: string): string {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 /** Null when the run had no image jobs, i.e. images are not synced. */
@@ -30,7 +37,10 @@ function imageSummary(images: Status['images']): string | null {
     return `${pending ? 'Downloading images' : 'Images'}: ${parts.join(', ')}`;
 }
 
-/** Counts are per Akeneo product, i.e. per Vendure variant. */
+/**
+ * Counts are per Akeneo product, i.e. per Vendure variant. "Sync changes" fetches only what
+ * Akeneo updated since the last completed run; a full sync is needed after settings change.
+ */
 export function AkeneoProductSyncBlock({
     settings,
     hasUnsavedSettings,
@@ -39,15 +49,35 @@ export function AkeneoProductSyncBlock({
         <SyncRunBlock<Status>
             noun="products"
             queryKey="akeneoProductSyncStatus"
-            fetchStatus={async () => (await api.query(akeneoProductSyncStatusQuery)).akeneoProductSyncStatus}
+            // Settings decide whether a changes-only run is possible, so refetch when they change
+            refreshKey={JSON.stringify(settings ?? null)}
+            fetchStatus={async () => {
+                const result = await api.query(akeneoProductSyncStatusQuery);
+                return (
+                    result.akeneoProductSyncStatus && {
+                        ...result.akeneoProductSyncStatus,
+                        changesAvailableSince: result.akeneoProductSyncChangesSince,
+                    }
+                );
+            }}
             // Pass variables: with only a document, api.mutate returns a curried function instead
-            start={() => api.mutate(startAkeneoProductSyncMutation, {})}
+            start={() => api.mutate(startAkeneoProductSyncMutation, { changesOnly: false })}
+            startLabel="Full sync"
+            quickStart={s =>
+                s?.changesAvailableSince
+                    ? {
+                          label: 'Sync changes',
+                          start: () => api.mutate(startAkeneoProductSyncMutation, { changesOnly: true }),
+                      }
+                    : null
+            }
             blockedReason={blockedReason(settings, hasUnsavedSettings)}
             detail={s =>
                 [
+                    s.changesSince && `Changes since ${new Date(s.changesSince).toLocaleString()}`,
                     s.state === 'RUNNING'
                         ? `${s.pages} page(s) done, ${s.products} variants so far`
-                        : `${s.products} variants, ${s.productsCreated} new products`,
+                        : `${plural(s.products, 'variant')}, ${plural(s.productsCreated, 'new product')}, ${plural(s.productsUpdated, 'product')} updated`,
                     s.skipped ? `${s.skipped} skipped: synced by another channel` : null,
                     imageSummary(s.images),
                 ]

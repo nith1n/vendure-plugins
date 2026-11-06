@@ -19,6 +19,12 @@ interface SyncRunBlockProps<S extends SyncRunStatus> {
     queryKey: string;
     fetchStatus: () => Promise<S | null | undefined>;
     start: () => Promise<unknown>;
+    /** Label of the start button; "Sync <noun>" by default. */
+    startLabel?: string;
+    /** A faster way to start shown first, e.g. syncing only what changed; null when unavailable. */
+    quickStart?: (status: S | null) => { label: string; start: () => Promise<unknown> } | null;
+    /** Part of the status query key; a change refetches the status, e.g. after settings change. */
+    refreshKey?: string;
     /** Why the sync can't start yet, or null when it can. */
     blockedReason: string | null;
     /** Extra line under the badge, e.g. progress while running. */
@@ -44,20 +50,25 @@ export function SyncRunBlock<S extends SyncRunStatus>({
     queryKey,
     fetchStatus,
     start,
+    startLabel,
+    quickStart,
+    refreshKey,
     blockedReason,
     detail,
 }: Readonly<SyncRunBlockProps<S>>) {
     const queryClient = useQueryClient();
     const { data: status, error } = useQuery({
-        queryKey: [queryKey],
+        queryKey: [queryKey, refreshKey],
         queryFn: async () => (await fetchStatus()) ?? null,
         // Poll only while a run is going
         refetchInterval: query => (query.state.data?.state === 'RUNNING' ? POLL_INTERVAL_MS : false),
     });
     const running = status?.state === 'RUNNING';
 
+    const quick = quickStart?.(status ?? null) ?? null;
+
     const startMutation = useMutation({
-        mutationFn: start,
+        mutationFn: (run: () => Promise<unknown>) => run(),
         onSuccess: async () => {
             await queryClient.invalidateQueries({ queryKey: [queryKey] });
             toast.success(`Syncing ${noun}`);
@@ -75,14 +86,23 @@ export function SyncRunBlock<S extends SyncRunStatus>({
                 </p>
             )}
             {blockedReason && <p className="text-muted-foreground">{blockedReason}</p>}
-            <div>
+            <div className="flex flex-wrap gap-2">
+                {quick && !running && !startMutation.isPending && (
+                    <Button
+                        type="button"
+                        disabled={!!blockedReason}
+                        onClick={() => startMutation.mutate(quick.start)}
+                    >
+                        {quick.label}
+                    </Button>
+                )}
                 <Button
                     type="button"
                     variant="outline"
                     disabled={!!blockedReason || running || startMutation.isPending}
-                    onClick={() => startMutation.mutate()}
+                    onClick={() => startMutation.mutate(start)}
                 >
-                    {running || startMutation.isPending ? 'Syncing…' : `Sync ${noun}`}
+                    {running || startMutation.isPending ? 'Syncing…' : (startLabel ?? `Sync ${noun}`)}
                 </Button>
             </div>
         </div>

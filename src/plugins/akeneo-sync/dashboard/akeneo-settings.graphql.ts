@@ -147,15 +147,18 @@ export const startAkeneoCategorySyncMutation = graphql(`
 
 export const akeneoProductSyncStatusQuery = graphql(`
     query AkeneoProductSyncStatus {
+        akeneoProductSyncChangesSince
         akeneoProductSyncStatus {
             runId
             state
+            changesSince
             pages
             products
             created
             updated
             unchanged
             productsCreated
+            productsUpdated
             skipped
             images {
                 downloaded
@@ -173,8 +176,8 @@ export const akeneoProductSyncStatusQuery = graphql(`
 `);
 
 export const startAkeneoProductSyncMutation = graphql(`
-    mutation StartAkeneoProductSync {
-        startAkeneoProductSync {
+    mutation StartAkeneoProductSync($changesOnly: Boolean) {
+        startAkeneoProductSync(changesOnly: $changesOnly) {
             id
         }
     }
@@ -198,6 +201,14 @@ export const akeneoCleanupStatusQuery = graphql(`
                     count
                     examples
                 }
+                options {
+                    count
+                    examples
+                }
+                optionGroups {
+                    count
+                    examples
+                }
                 collections {
                     count
                     examples
@@ -215,6 +226,8 @@ export const akeneoCleanupStatusQuery = graphql(`
             removed {
                 products
                 variants
+                options
+                optionGroups
                 collections
                 assets
             }
