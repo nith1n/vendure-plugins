@@ -13,6 +13,7 @@ import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.
 import { AkeneoVariantCategory } from './entities/akeneo-variant-category.entity';
 import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
+import { AkeneoAssetSyncService } from './services/akeneo-asset-sync.service';
 import { AkeneoCategorySyncService } from './services/akeneo-category-sync.service';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
 import { AkeneoProductSyncService } from './services/akeneo-product-sync.service';
@@ -28,6 +29,7 @@ import { PluginInitOptions } from './types';
         AkeneoCategorySyncService,
         AkeneoSyncSettingsService,
         AkeneoProductSyncService,
+        AkeneoAssetSyncService,
     ],
     entities: [AkeneoConnectionSettings, AkeneoVariantCategory],
     adminApiExtensions: {

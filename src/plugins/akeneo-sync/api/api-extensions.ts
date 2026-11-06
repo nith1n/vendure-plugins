@@ -37,6 +37,27 @@ export const adminApiExtensions = gql`
         productDescriptionAttribute: String
         "Price collection attribute used as variant prices; null leaves prices to Vendure"
         productPriceAttribute: String
+        "Sync images from each family's image attributes; when false, assets are left to Vendure"
+        syncImages: Boolean!
+        "Attributes for families that differ from the defaults"
+        familyOverrides: [AkeneoFamilyOverride!]!
+    }
+
+    "Attributes of one Akeneo family; null or empty uses the default"
+    type AkeneoFamilyOverride {
+        family: String!
+        nameAttribute: String
+        descriptionAttribute: String
+        priceAttribute: String
+        "In order; the first image found is featured"
+        imageAttributes: [String!]!
+    }
+
+    type AkeneoFamilyOption {
+        code: String!
+        label: String!
+        "Codes of the family's attributes"
+        attributes: [String!]!
     }
 
     "Which Akeneo locale feeds a Vendure language"
@@ -94,9 +115,26 @@ export const adminApiExtensions = gql`
         unchanged: Int!
         "Vendure Products created (one per root product model or simple product)"
         productsCreated: Int!
+        images: AkeneoImageSyncCounts!
         startedAt: DateTime!
         finishedAt: DateTime
         error: String
+    }
+
+    "Image downloads of a product sync run, summed over its asset jobs"
+    type AkeneoImageSyncCounts {
+        "New Vendure Assets downloaded from Akeneo"
+        downloaded: Int!
+        "Images already in Vendure"
+        reused: Int!
+        "Products and variants whose Akeneo images changed"
+        assigned: Int!
+        "Media links, missing assets and unsupported files"
+        skipped: Int!
+        "Asset jobs still queued or running"
+        pending: Int!
+        "Asset jobs that failed"
+        failed: Int!
     }
 
     input AkeneoLocaleMappingInput {
@@ -117,6 +155,17 @@ export const adminApiExtensions = gql`
         productDescriptionAttribute: String
         "Null leaves prices to Vendure"
         productPriceAttribute: String
+        "Sync images from each family's image attributes"
+        syncImages: Boolean
+        familyOverrides: [AkeneoFamilyOverrideInput!]
+    }
+
+    input AkeneoFamilyOverrideInput {
+        family: String!
+        nameAttribute: String
+        descriptionAttribute: String
+        priceAttribute: String
+        imageAttributes: [String!]
     }
 
     type AkeneoAttributeChoice {
@@ -168,8 +217,10 @@ export const adminApiExtensions = gql`
         akeneoCategoryTrees: [AkeneoCategoryTreeOption!]!
         "Suggested locale for each language of the active channel"
         akeneoSuggestedLocaleMapping(channelCode: String!): [AkeneoLocaleMapping!]!
-        "Text, textarea and price attributes of the connected Akeneo instance, read live"
+        "Text, textarea, price, image and asset collection attributes of the connected Akeneo instance, read live"
         akeneoAttributeChoices: [AkeneoAttributeChoice!]!
+        "Families of the connected Akeneo instance, read live"
+        akeneoFamilies: [AkeneoFamilyOption!]!
         "Null if no category sync has run for this channel yet"
         akeneoCategorySyncStatus: AkeneoCategorySyncStatus
         "Null if no product sync has run for this channel yet"

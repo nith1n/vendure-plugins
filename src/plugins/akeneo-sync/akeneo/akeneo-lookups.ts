@@ -1,5 +1,9 @@
 import { AkeneoApiClient, AkeneoApiError } from './akeneo-api-client';
 import {
+    AkeneoAsset,
+    AkeneoAssetFamily,
+    AkeneoAssetFamilyAttribute,
+    AKENEO_IMAGE_ATTRIBUTE_TYPES,
     AkeneoAttribute,
     AkeneoAttributeOption,
     AkeneoCategory,
@@ -12,7 +16,7 @@ import {
 
 /**
  * Memoized reads of the Akeneo records a page of products refers to (models, families,
- * attributes, options). Create one per job so data is fresh for every page.
+ * attributes, options, assets). Create one per job so data is fresh for every page.
  */
 export class AkeneoLookups {
     private readonly cache = new Map<string, Promise<unknown>>();
@@ -54,6 +58,58 @@ export class AkeneoLookups {
     option(attributeCode: string, code: string): Promise<AkeneoAttributeOption | undefined> {
         return this.once(`option:${attributeCode}:${code}`, () =>
             this.client.attributeOption(attributeCode, code).catch(notFoundAsUndefined),
+        );
+    }
+
+    /**
+     * The family's image and asset collection attributes: its image attribute first, then the
+     * others in Akeneo's attribute order (group order, then attribute order).
+     */
+    async familyImageAttributes(familyCode: string): Promise<string[]> {
+        const family = await this.family(familyCode);
+        const ordered = await this.imageAttributesInOrder();
+        const inFamily = ordered.filter(code => family.attributes.includes(code));
+        const main = family.attribute_as_image;
+        return main && inFamily.includes(main) ? [main, ...inFamily.filter(c => c !== main)] : inFamily;
+    }
+
+    /** Every image and asset collection attribute, in Akeneo's attribute order. */
+    private imageAttributesInOrder(): Promise<string[]> {
+        return this.once('imageAttributes', async () => {
+            const groupOrder = new Map<string, number>();
+            for await (const page of this.client.pages(await this.client.attributeGroups())) {
+                for (const group of page.items) groupOrder.set(group.code, group.sort_order);
+            }
+            const attributes: AkeneoAttribute[] = [];
+            const search = { type: [{ operator: 'IN', value: AKENEO_IMAGE_ATTRIBUTE_TYPES }] };
+            for await (const page of this.client.pages(await this.client.attributes({ search }))) {
+                attributes.push(...page.items);
+            }
+            return attributes
+                .sort(
+                    (a, b) =>
+                        (groupOrder.get(a.group) ?? 0) - (groupOrder.get(b.group) ?? 0) ||
+                        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+                        a.code.localeCompare(b.code),
+                )
+                .map(a => a.code);
+        });
+    }
+
+    /** Undefined if the asset no longer exists. */
+    asset(assetFamilyCode: string, code: string): Promise<AkeneoAsset | undefined> {
+        return this.once(`asset:${assetFamilyCode}:${code}`, () =>
+            this.client.asset(assetFamilyCode, code).catch(notFoundAsUndefined),
+        );
+    }
+
+    assetFamily(code: string): Promise<AkeneoAssetFamily> {
+        return this.once(`assetFamily:${code}`, () => this.client.assetFamily(code));
+    }
+
+    assetFamilyAttribute(assetFamilyCode: string, code: string): Promise<AkeneoAssetFamilyAttribute> {
+        return this.once(`assetAttr:${assetFamilyCode}:${code}`, () =>
+            this.client.assetFamilyAttribute(assetFamilyCode, code),
         );
     }
 

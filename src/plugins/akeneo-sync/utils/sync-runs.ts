@@ -17,7 +17,9 @@ export type SyncRunState = 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export const ACTIVE_JOB_STATES = [JobState.PENDING, JobState.RUNNING, JobState.RETRYING];
 
 /** How many recent jobs of a queue to look through for a channel's latest run. */
-const LOOKBACK = 50;
+const DEFAULT_LOOKBACK = 50;
+/** The most jobs the job queue strategy returns in one list. */
+export const MAX_JOB_LOOKBACK = 100;
 
 /** Jobs of the queue for the active channel, newest first. Jobs without a `runId` are ignored. */
 export async function findChannelJobs<D extends SyncRunJobData & JobData<D>>(
@@ -25,6 +27,7 @@ export async function findChannelJobs<D extends SyncRunJobData & JobData<D>>(
     ctx: RequestContext,
     queueName: string,
     filter: JobFilterParameter = {},
+    lookback = DEFAULT_LOOKBACK,
 ): Promise<Array<Job<D>>> {
     const strategy = configService.jobQueueOptions.jobQueueStrategy;
     // Without an inspectable strategy there is no way to list jobs; report no runs
@@ -32,7 +35,7 @@ export async function findChannelJobs<D extends SyncRunJobData & JobData<D>>(
     const { items } = await strategy.findMany({
         filter: { queueName: { eq: queueName }, ...filter },
         sort: { createdAt: SortOrder.DESC },
-        take: LOOKBACK,
+        take: lookback,
     });
     return items
         .map(job => job as Job<D>)

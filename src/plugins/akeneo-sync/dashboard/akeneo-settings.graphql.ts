@@ -22,6 +22,14 @@ export const akeneoSettingsFragment = graphql(`
         productNameAttribute
         productDescriptionAttribute
         productPriceAttribute
+        syncImages
+        familyOverrides {
+            family
+            nameAttribute
+            descriptionAttribute
+            priceAttribute
+            imageAttributes
+        }
     }
 `);
 
@@ -76,6 +84,11 @@ export const akeneoSyncOptionsQuery = graphql(`
             code
             label
             type
+        }
+        akeneoFamilies {
+            code
+            label
+            attributes
         }
         activeChannel {
             id
@@ -143,6 +156,14 @@ export const akeneoProductSyncStatusQuery = graphql(`
             updated
             unchanged
             productsCreated
+            images {
+                downloaded
+                reused
+                assigned
+                skipped
+                pending
+                failed
+            }
             startedAt
             finishedAt
             error

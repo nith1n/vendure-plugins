@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
+import { CurrencyCode, JobState, LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
@@ -27,19 +27,28 @@ import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups, findMainIdentifierAttribute, pickText, pickValue } from '../akeneo/akeneo-lookups';
 import { AkeneoLabels, AkeneoProduct, AkeneoValue, AkeneoValues } from '../akeneo/akeneo-types';
 import { loggerCtx } from '../constants';
-import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
+import { AkeneoFamilyOverride, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
 import { AkeneoVariantCategory } from '../entities/akeneo-variant-category.entity';
 import {
     ACTIVE_JOB_STATES,
     errorText,
     findChannelJobs,
     hasActiveRun,
+    MAX_JOB_LOOKBACK,
     runState,
     SyncRunJobData,
     SyncRunState,
 } from '../utils/sync-runs';
 
 import { AkeneoApiService } from './akeneo-api.service';
+import {
+    AkeneoAssetSyncService,
+    AkeneoImageRef,
+    AkeneoImageTarget,
+    ASSET_QUEUE_NAME,
+    AssetSyncCounts,
+    AssetSyncJobData,
+} from './akeneo-asset-sync.service';
 import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.service';
 
 // Type aliases (not interfaces) so they satisfy the job queue's JsonCompatible data constraint
@@ -63,6 +72,8 @@ interface ProductSyncJobData extends SyncRunJobData {
     nameAttribute: string | null;
     descriptionAttribute: string | null;
     priceAttribute: string | null;
+    syncImages: boolean;
+    familyOverrides: AkeneoFamilyOverride[];
     /** Resolved by the first page; null means SKUs fall back to the product UUID. */
     identifierAttribute: string | null;
     /** `next` URL of the previous page; null for the first page. */
@@ -79,11 +90,18 @@ export interface ProductSyncPageResult {
 
 export interface ProductSyncStatus extends ProductSyncTotals {
     runId: string;
+    images: ImageSyncStatus;
     state: SyncRunState;
     startedAt: Date;
     finishedAt: Date | null;
     error: string | null;
 }
+
+export type ImageSyncStatus = AssetSyncCounts & {
+    /** Asset jobs still queued or running. */
+    pending: number;
+    failed: number;
+};
 
 type Run = Pick<
     ProductSyncJobData,
@@ -92,10 +110,14 @@ type Run = Pick<
     | 'nameAttribute'
     | 'descriptionAttribute'
     | 'priceAttribute'
+    | 'syncImages'
+    | 'familyOverrides'
     | 'identifierAttribute'
 >;
 type Names = Map<LanguageCode, string>;
 type Counts = Pick<ProductSyncTotals, 'created' | 'updated' | 'unchanged' | 'productsCreated'>;
+/** Image targets of a page by `product:<id>` / `variant:<id>`. */
+type ImageTargets = Map<string, AkeneoImageTarget>;
 
 /** What an Akeneo product becomes part of: its root model's Product, or its own (simple). */
 interface Target {
@@ -162,6 +184,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         private collectionService: CollectionService,
         private akeneoApiService: AkeneoApiService,
         private connectionSettingsService: AkeneoConnectionSettingsService,
+        private assetSyncService: AkeneoAssetSyncService,
     ) {}
 
     async onModuleInit() {
@@ -183,7 +206,10 @@ export class AkeneoProductSyncService implements OnModuleInit {
         const active = await findChannelJobs(this.configService, ctx, QUEUE_NAME, {
             state: { in: ACTIVE_JOB_STATES },
         });
-        if (hasActiveRun(active))
+        const activeAssets = await findChannelJobs(this.configService, ctx, ASSET_QUEUE_NAME, {
+            state: { in: ACTIVE_JOB_STATES },
+        });
+        if (hasActiveRun(active) || hasActiveRun(activeAssets))
             throw new UserInputError('A product sync is already running for this channel');
 
         // Products "belong" to an Akeneo channel when classified in its category tree
@@ -208,6 +234,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 nameAttribute: settings.productNameAttribute,
                 descriptionAttribute: settings.productDescriptionAttribute,
                 priceAttribute: settings.productPriceAttribute,
+                syncImages: settings.syncImages,
+                familyOverrides: settings.familyOverrides,
                 identifierAttribute: null,
                 cursor: null,
                 page: 1,
@@ -221,15 +249,49 @@ export class AkeneoProductSyncService implements OnModuleInit {
         const [latest] = await findChannelJobs<ProductSyncJobData>(this.configService, ctx, QUEUE_NAME);
         if (!latest) return null;
         const result = latest.result as ProductSyncPageResult | undefined;
-        const state = runState(latest);
+        const images = await this.imageStatus(ctx, latest.data.runId);
+        // A run is still going while its images download
+        const productState = runState(latest);
+        const state = productState === 'COMPLETED' && images.pending ? 'RUNNING' : productState;
         return {
             runId: latest.data.runId,
             state,
             ...(result?.totals ?? latest.data.totals),
+            images,
             startedAt: new Date(latest.data.startedAt),
             finishedAt: state === 'RUNNING' ? null : (latest.settledAt ?? null),
             error: state === 'FAILED' ? errorText(latest.error) : null,
         };
+    }
+
+    /** Image counts summed over the run's asset jobs. */
+    private async imageStatus(ctx: RequestContext, runId: string): Promise<ImageSyncStatus> {
+        const jobs = await findChannelJobs<AssetSyncJobData>(
+            this.configService,
+            ctx,
+            ASSET_QUEUE_NAME,
+            {},
+            MAX_JOB_LOOKBACK,
+        );
+        const status: ImageSyncStatus = {
+            downloaded: 0,
+            reused: 0,
+            assigned: 0,
+            skipped: 0,
+            pending: 0,
+            failed: 0,
+        };
+        for (const job of jobs.filter(j => j.data.runId === runId)) {
+            if (ACTIVE_JOB_STATES.includes(job.state)) status.pending++;
+            else if (job.state === JobState.FAILED) status.failed++;
+            const counts = job.result as AssetSyncCounts | undefined;
+            if (!counts) continue;
+            status.downloaded += counts.downloaded;
+            status.reused += counts.reused;
+            status.assigned += counts.assigned;
+            status.skipped += counts.skipped;
+        }
+        return status;
     }
 
     private async syncPage(data: ProductSyncJobData): Promise<ProductSyncPageResult> {
@@ -249,11 +311,31 @@ export class AkeneoProductSyncService implements OnModuleInit {
                   locales: [...new Set(data.localeMapping.map(m => m.locale))],
               });
 
-        const run: Run = { ...data, identifierAttribute };
+        // Older queued jobs may predate the image and family settings
+        const run: Run = {
+            ...data,
+            identifierAttribute,
+            syncImages: data.syncImages ?? false,
+            familyOverrides: data.familyOverrides ?? [],
+        };
         const lookups = new AkeneoLookups(client);
+        const imageTargets: ImageTargets = new Map();
         const counts = await this.connection.withTransaction(ctx, txCtx =>
-            this.upsertProducts(txCtx, page.items, lookups, run),
+            this.upsertProducts(txCtx, page.items, lookups, run, imageTargets),
         );
+        // Queued after the page's transaction, so the job sees its products and variants
+        const locale = this.defaultLocale(ctx, run);
+        if (imageTargets.size && locale) {
+            await this.assetSyncService.add({
+                ctx: data.ctx,
+                channelId: data.channelId,
+                runId: data.runId,
+                startedAt: data.startedAt,
+                akeneoChannel: data.akeneoChannel,
+                locale,
+                targets: [...imageTargets.values()],
+            });
+        }
 
         const totals: ProductSyncTotals = {
             pages: data.totals.pages + 1,
@@ -279,6 +361,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         items: AkeneoProduct[],
         lookups: AkeneoLookups,
         run: Run,
+        imageTargets: ImageTargets,
     ): Promise<Counts> {
         const counts: Counts = { created: 0, updated: 0, unchanged: 0, productsCreated: 0 };
         const variants = await this.findVariants(
@@ -317,6 +400,9 @@ export class AkeneoProductSyncService implements OnModuleInit {
             );
             counts[outcome === 'unchanged' && categoriesChanged ? 'updated' : outcome]++;
             touched.add(product.id);
+            if (run.syncImages) {
+                await this.collectImages(ctx, item, target, product.id, id, lookups, run, imageTargets);
+            }
         }
         await this.syncProductEnabled(ctx, touched);
         await this.reapplyCategoryCollections(ctx, changedCategories);
@@ -583,6 +669,89 @@ export class AkeneoProductSyncService implements OnModuleInit {
     }
 
     /** The categories plus all their ancestors, so parent Collections include descendants. */
+    /**
+     * Which images the product and variant should have. The product gets its own images (the
+     * root model's, or a simple product's); a variant gets its own only where they differ from
+     * the product's, e.g. images set on a colour sub model. A product without images of its own
+     * borrows a variant's.
+     */
+    private async collectImages(
+        ctx: RequestContext,
+        item: AkeneoProduct,
+        target: Target,
+        productId: ID,
+        variantId: ID,
+        lookups: AkeneoLookups,
+        run: Run,
+        imageTargets: ImageTargets,
+    ) {
+        const productRefs = await this.imageRefs(ctx, target.values, target.family, lookups, run);
+        const variantRefs =
+            target.field === 'akeneoUuid'
+                ? productRefs
+                : await this.imageRefs(ctx, item.values, item.family, lookups, run);
+        const ownRefs = sameRefs(variantRefs, productRefs) ? [] : variantRefs;
+        imageTargets.set(`variant:${variantId}`, { type: 'variant', id: String(variantId), refs: ownRefs });
+
+        const productKey = `product:${productId}`;
+        const existing = imageTargets.get(productKey);
+        if (productRefs.length) {
+            imageTargets.set(productKey, { type: 'product', id: String(productId), refs: productRefs });
+        } else if (!existing || (existing.fallback && !existing.refs.length)) {
+            imageTargets.set(productKey, {
+                type: 'product',
+                id: String(productId),
+                refs: variantRefs,
+                fallback: true,
+            });
+        }
+    }
+
+    /** The images of the family's image attributes, in order. */
+    private async imageRefs(
+        ctx: RequestContext,
+        values: AkeneoValues,
+        family: string | null,
+        lookups: AkeneoLookups,
+        run: Run,
+    ): Promise<AkeneoImageRef[]> {
+        if (!family) return [];
+        const override = this.mapping(run, family).imageAttributes;
+        const attributes = override.length ? override : await lookups.familyImageAttributes(family);
+        const locale = this.defaultLocale(ctx, run);
+        const refs: AkeneoImageRef[] = [];
+        for (const code of attributes) {
+            const data = pickValue(values, code, locale, run.akeneoChannel)?.data;
+            if (typeof data === 'string' && data) {
+                refs.push({ kind: 'media', code: data });
+            } else if (Array.isArray(data) && data.length) {
+                const assetFamily = (await lookups.attribute(code)).reference_data_name;
+                if (!assetFamily) continue;
+                for (const assetCode of data) {
+                    if (typeof assetCode === 'string')
+                        refs.push({ kind: 'asset', assetFamily, code: assetCode });
+                }
+            }
+        }
+        return refs;
+    }
+
+    /** The attributes for a family: its override where set, else the defaults. */
+    private mapping(run: Run, family: string | null) {
+        const override = family ? run.familyOverrides.find(o => o.family === family) : undefined;
+        return {
+            nameAttribute: override?.nameAttribute ?? run.nameAttribute,
+            descriptionAttribute: override?.descriptionAttribute ?? run.descriptionAttribute,
+            priceAttribute: override?.priceAttribute ?? run.priceAttribute,
+            imageAttributes: override?.imageAttributes ?? [],
+        };
+    }
+
+    private defaultLocale(ctx: RequestContext, run: Pick<Run, 'localeMapping'>): string | null {
+        const defaultLanguage = ctx.channel.defaultLanguageCode;
+        return run.localeMapping.find(m => m.languageCode === defaultLanguage)?.locale ?? null;
+    }
+
     private async withAncestors(codes: string[], lookups: AkeneoLookups): Promise<string[]> {
         const all = new Set<string>();
         for (const code of codes) {
@@ -654,7 +823,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
      */
     private async productNames(ctx: RequestContext, target: Target, lookups: AkeneoLookups, run: Run) {
         const familyLabel = target.family ? (await lookups.family(target.family)).attribute_as_label : null;
-        const attributes = [...new Set([run.nameAttribute, familyLabel])].filter((a): a is string => !!a);
+        const { nameAttribute } = this.mapping(run, target.family);
+        const attributes = [...new Set([nameAttribute, familyLabel])].filter((a): a is string => !!a);
         const names: Names = new Map();
         const available = new Set(ctx.channel.availableLanguageCodes ?? []);
         for (const { languageCode, locale } of run.localeMapping) {
@@ -683,12 +853,13 @@ export class AkeneoProductSyncService implements OnModuleInit {
 
     /** Description per name language; undefined when descriptions are left to Vendure. */
     private descriptions(ctx: RequestContext, target: Target, run: Run): Names | undefined {
-        if (!run.descriptionAttribute) return undefined;
+        const { descriptionAttribute } = this.mapping(run, target.family);
+        if (!descriptionAttribute) return undefined;
         const descriptions: Names = new Map();
         for (const { languageCode, locale } of run.localeMapping) {
             descriptions.set(
                 languageCode,
-                pickText(target.values, run.descriptionAttribute, locale, run.akeneoChannel) ?? '',
+                pickText(target.values, descriptionAttribute, locale, run.akeneoChannel) ?? '',
             );
         }
         return descriptions;
@@ -699,8 +870,9 @@ export class AkeneoProductSyncService implements OnModuleInit {
      * left to Vendure. Amounts are converted to Vendure's integer minor units.
      */
     private prices(ctx: RequestContext, item: AkeneoProduct, run: Run) {
-        if (!run.priceAttribute) return undefined;
-        const data = pickValue(item.values, run.priceAttribute, null, run.akeneoChannel)?.data;
+        const { priceAttribute } = this.mapping(run, item.family);
+        if (!priceAttribute) return undefined;
+        const data = pickValue(item.values, priceAttribute, null, run.akeneoChannel)?.data;
         if (!Array.isArray(data)) return [];
         const currencies = new Set<string>(
             ctx.channel.availableCurrencyCodes ?? [ctx.channel.defaultCurrencyCode],
@@ -757,4 +929,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
         });
         return new Map(variants.map(v => [v.customFields.akeneoUuid as string, v]));
     }
+}
+
+function sameRefs(a: AkeneoImageRef[], b: AkeneoImageRef[]): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
 }

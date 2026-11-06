@@ -84,10 +84,31 @@ export class AkeneoConnectionSettings extends VendureEntity {
     /** Price collection attribute used as variant prices. Null leaves prices to Vendure. */
     @Column({ type: 'varchar', length: 255, nullable: true })
     productPriceAttribute: string | null;
+
+    /**
+     * Sync product and variant images from each family's image and asset collection attributes,
+     * the family's image attribute first. When off, assets are left to Vendure.
+     */
+    @Column({ type: 'boolean', default: false })
+    syncImages: boolean;
+
+    /** Attributes for families that differ from the defaults above. */
+    @Column({ type: 'simple-json', default: '[]' })
+    familyOverrides: AkeneoFamilyOverride[];
 }
 
-// A type alias (not an interface) so it satisfies the job queue's JsonCompatible data constraint
+// Type aliases (not interfaces) so they satisfy the job queue's JsonCompatible data constraint
 export type AkeneoLocaleMapping = {
     languageCode: LanguageCode;
     locale: string;
+};
+
+/** Per-family attributes; null or empty uses the default. */
+export type AkeneoFamilyOverride = {
+    family: string;
+    nameAttribute: string | null;
+    descriptionAttribute: string | null;
+    priceAttribute: string | null;
+    /** In order; the first image found is featured. */
+    imageAttributes: string[];
 };

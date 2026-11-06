@@ -1,4 +1,8 @@
-import { AkeneoCredentialStatus, AkeneoLocaleMapping } from './entities/akeneo-connection-settings.entity';
+import {
+    AkeneoCredentialStatus,
+    AkeneoFamilyOverride,
+    AkeneoLocaleMapping,
+} from './entities/akeneo-connection-settings.entity';
 
 /**
  * @description
@@ -50,6 +54,15 @@ export interface SaveAkeneoSyncSettingsInput {
     productDescriptionAttribute?: string | null;
     /** Null leaves prices to Vendure. */
     productPriceAttribute?: string | null;
+    syncImages?: boolean | null;
+    familyOverrides?: AkeneoFamilyOverride[] | null;
+}
+
+export interface AkeneoFamilyOption {
+    code: string;
+    label: string;
+    /** Codes of the family's attributes. */
+    attributes: string[];
 }
 
 export interface AkeneoAttributeChoice {

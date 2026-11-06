@@ -6,7 +6,10 @@ import { describeNetworkError, firstString, isRecord, requestAkeneoToken } from 
 
 import {
     AkeneoAsset,
+    AkeneoAssetFamily,
+    AkeneoAssetFamilyAttribute,
     AkeneoAttribute,
+    AkeneoAttributeGroup,
     AkeneoAttributeOption,
     AkeneoCategory,
     AkeneoChannel,
@@ -96,6 +99,10 @@ export class AkeneoApiClient {
         return this.list('/attributes', options);
     }
 
+    attributeGroups(options?: AkeneoListOptions): Promise<AkeneoPage<AkeneoAttributeGroup>> {
+        return this.list('/attribute-groups', options);
+    }
+
     async attribute(code: string): Promise<AkeneoAttribute> {
         return (await this.getJson(
             `${API_PREFIX}/attributes/${encodeURIComponent(code)}`,
@@ -156,6 +163,22 @@ export class AkeneoApiClient {
             `${API_PREFIX}/asset-families/${encodeURIComponent(assetFamilyCode)}/assets`,
             query,
         );
+    }
+
+    async asset(assetFamilyCode: string, code: string): Promise<AkeneoAsset> {
+        const path = `/asset-families/${encodeURIComponent(assetFamilyCode)}/assets/${encodeURIComponent(code)}`;
+        return (await this.getJson(`${API_PREFIX}${path}`)) as AkeneoAsset;
+    }
+
+    async assetFamily(code: string): Promise<AkeneoAssetFamily> {
+        return (await this.getJson(
+            `${API_PREFIX}/asset-families/${encodeURIComponent(code)}`,
+        )) as AkeneoAssetFamily;
+    }
+
+    async assetFamilyAttribute(assetFamilyCode: string, code: string): Promise<AkeneoAssetFamilyAttribute> {
+        const path = `/asset-families/${encodeURIComponent(assetFamilyCode)}/attributes/${encodeURIComponent(code)}`;
+        return (await this.getJson(`${API_PREFIX}${path}`)) as AkeneoAssetFamilyAttribute;
     }
 
     /** Downloads an Asset Manager media file (the `data` of a media file asset value). */

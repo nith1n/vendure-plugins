@@ -61,6 +61,17 @@ export interface AkeneoAttribute {
     labels: AkeneoLabels;
     sort_order?: number;
     is_main_identifier?: boolean;
+    /** Asset family code of a `pim_catalog_asset_collection` attribute. */
+    reference_data_name?: string | null;
+}
+
+/** Attribute types holding images: a product media file, or Asset Manager asset codes. */
+export const AKENEO_IMAGE_ATTRIBUTE_TYPES = ['pim_catalog_image', 'pim_catalog_asset_collection'];
+
+export interface AkeneoAttributeGroup {
+    code: string;
+    sort_order: number;
+    labels: AkeneoLabels;
 }
 
 export interface AkeneoAttributeOption {
@@ -125,6 +136,20 @@ export interface AkeneoAssetValue {
     locale: string | null;
     channel: string | null;
     data: unknown;
+}
+
+export interface AkeneoAssetFamily {
+    code: string;
+    labels: AkeneoLabels;
+    /** Asset attribute holding the asset's main image. */
+    attribute_as_main_media: string;
+}
+
+export interface AkeneoAssetFamilyAttribute {
+    code: string;
+    /** `media_file` (stored in Akeneo) or `media_link` (an external URL), among others. */
+    type: string;
+    media_type?: string;
 }
 
 export interface AkeneoAsset {

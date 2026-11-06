@@ -34,6 +34,7 @@ const NOT_MAPPED = '__not_mapped__';
 const NOT_SET = '__not_set__';
 const TEXT_TYPES = ['pim_catalog_text', 'pim_catalog_textarea'];
 const PRICE_TYPE = 'pim_catalog_price_collection';
+const IMAGE_TYPES = ['pim_catalog_image', 'pim_catalog_asset_collection'];
 
 interface SyncValues {
     channelCode: string;
@@ -48,7 +49,21 @@ interface SyncValues {
     descriptionAttribute: string;
     /** Empty leaves prices to Vendure. */
     priceAttribute: string;
+    syncImages: boolean;
+    overrides: FamilyOverrideValues[];
 }
+
+/** Empty strings and lists use the default. */
+interface FamilyOverrideValues {
+    family: string;
+    nameAttribute: string;
+    descriptionAttribute: string;
+    priceAttribute: string;
+    imageAttributes: string[];
+}
+
+type AttributeChoice = { code: string; label: string; type: string };
+type FamilyOption = { code: string; label: string; attributes: string[] };
 
 function toValues(settings: Settings): SyncValues {
     return {
@@ -60,6 +75,14 @@ function toValues(settings: Settings): SyncValues {
         nameAttribute: settings.productNameAttribute ?? '',
         descriptionAttribute: settings.productDescriptionAttribute ?? '',
         priceAttribute: settings.productPriceAttribute ?? '',
+        syncImages: settings.syncImages,
+        overrides: settings.familyOverrides.map(o => ({
+            family: o.family,
+            nameAttribute: o.nameAttribute ?? '',
+            descriptionAttribute: o.descriptionAttribute ?? '',
+            priceAttribute: o.priceAttribute ?? '',
+            imageAttributes: o.imageAttributes,
+        })),
     };
 }
 
@@ -108,6 +131,7 @@ function SyncSettingsForm({
     const attributeChoices = options.data?.akeneoAttributeChoices ?? [];
     const textAttributes = attributeChoices.filter(a => TEXT_TYPES.includes(a.type));
     const priceAttributes = attributeChoices.filter(a => a.type === PRICE_TYPE);
+    const families = options.data?.akeneoFamilies ?? [];
     const languages = options.data?.activeChannel.availableLanguageCodes ?? [];
     const defaultLanguage = options.data?.activeChannel.defaultLanguageCode;
     const channel = channels.find(c => c.code === values.channelCode);
@@ -142,6 +166,14 @@ function SyncSettingsForm({
                     productNameAttribute: v.nameAttribute || null,
                     productDescriptionAttribute: v.descriptionAttribute || null,
                     productPriceAttribute: v.priceAttribute || null,
+                    syncImages: v.syncImages,
+                    familyOverrides: v.overrides.map(o => ({
+                        family: o.family,
+                        nameAttribute: o.nameAttribute || null,
+                        descriptionAttribute: o.descriptionAttribute || null,
+                        priceAttribute: o.priceAttribute || null,
+                        imageAttributes: o.imageAttributes,
+                    })),
                 },
             }),
         onSuccess: result => {
@@ -301,7 +333,7 @@ function SyncSettingsForm({
 
             <Section
                 title="Products"
-                description="How Akeneo products become Vendure products and variants. Product models become products, and their products become variants."
+                description="How Akeneo products become Vendure products and variants. Product models become products, and their products become variants. These defaults apply to every family without an override."
             >
                 <Field
                     label="Product name"
@@ -333,6 +365,32 @@ function SyncSettingsForm({
                         onChange={priceAttribute => setValues(v => ({ ...v, priceAttribute }))}
                     />
                 </Field>
+                <label className="flex items-start gap-3">
+                    <Switch
+                        checked={values.syncImages}
+                        onCheckedChange={syncImages => setValues(v => ({ ...v, syncImages }))}
+                    />
+                    <span className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium">Sync images</span>
+                        <span className="text-sm text-muted-foreground">
+                            Each family's image attribute becomes the featured image, followed by its other
+                            image attributes. When off, images are managed in Vendure.
+                        </span>
+                    </span>
+                </label>
+            </Section>
+
+            <Section
+                title="Family overrides"
+                description="Only for families whose attributes differ from the defaults. Anything left on “Use default” follows the Products settings."
+            >
+                <FamilyOverrides
+                    families={families}
+                    attributes={attributeChoices}
+                    syncImages={values.syncImages}
+                    overrides={values.overrides}
+                    onChange={overrides => setValues(v => ({ ...v, overrides }))}
+                />
             </Section>
 
             <div className="flex items-center justify-end gap-3 border-t pt-4">
@@ -345,6 +403,128 @@ function SyncSettingsForm({
                     {saveMutation.isPending ? 'Saving…' : 'Save sync settings'}
                 </Button>
             </div>
+        </div>
+    );
+}
+
+function FamilyOverrides({
+    families,
+    attributes,
+    syncImages,
+    overrides,
+    onChange,
+}: Readonly<{
+    families: FamilyOption[];
+    attributes: AttributeChoice[];
+    syncImages: boolean;
+    overrides: FamilyOverrideValues[];
+    onChange: (overrides: FamilyOverrideValues[]) => void;
+}>) {
+    const familyLabel = (code: string) => {
+        const family = families.find(f => f.code === code);
+        return family ? `${family.label} (${family.code})` : code;
+    };
+    const addable = families
+        .filter(f => !overrides.some(o => o.family === f.code))
+        .map(f => ({ value: f.code, label: `${f.label} (${f.code})` }));
+    const update = (index: number, patch: Partial<FamilyOverrideValues>) =>
+        onChange(overrides.map((o, i) => (i === index ? { ...o, ...patch } : o)));
+
+    return (
+        <div className="flex flex-col gap-4">
+            {overrides.map((override, index) => {
+                const inFamily = new Set(families.find(f => f.code === override.family)?.attributes ?? []);
+                const ofType = (types: string[]) =>
+                    attributes.filter(a => inFamily.has(a.code) && types.includes(a.type));
+                return (
+                    <div key={override.family} className="flex flex-col gap-4 rounded-md border p-4">
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold">{familyLabel(override.family)}</span>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onChange(overrides.filter((_, i) => i !== index))}
+                            >
+                                Remove
+                            </Button>
+                        </div>
+                        <Field label="Product name">
+                            <AttributeSelect
+                                attributes={ofType(TEXT_TYPES)}
+                                notSetLabel="Use default"
+                                value={override.nameAttribute}
+                                onChange={nameAttribute => update(index, { nameAttribute })}
+                            />
+                        </Field>
+                        <Field label="Description">
+                            <AttributeSelect
+                                attributes={ofType(TEXT_TYPES)}
+                                notSetLabel="Use default"
+                                value={override.descriptionAttribute}
+                                onChange={descriptionAttribute => update(index, { descriptionAttribute })}
+                            />
+                        </Field>
+                        <Field label="Price">
+                            <AttributeSelect
+                                attributes={ofType([PRICE_TYPE])}
+                                notSetLabel="Use default"
+                                value={override.priceAttribute}
+                                onChange={priceAttribute => update(index, { priceAttribute })}
+                            />
+                        </Field>
+                        {syncImages && (
+                            <Field
+                                label="Images"
+                                hint="In the order picked; the first image found is featured."
+                            >
+                                <MultiSelect
+                                    multiple
+                                    showSearch
+                                    items={ofType(IMAGE_TYPES).map(a => ({
+                                        value: a.code,
+                                        label: `${a.label} (${a.code})`,
+                                    }))}
+                                    value={override.imageAttributes}
+                                    onChange={imageAttributes => update(index, { imageAttributes })}
+                                    placeholder="Family's image attributes"
+                                    searchPlaceholder="Search attributes…"
+                                    className="w-full max-w-sm"
+                                />
+                            </Field>
+                        )}
+                    </div>
+                );
+            })}
+            {/* Always unselected: picking a family adds its card */}
+            <Select
+                items={Object.fromEntries(addable.map(f => [f.value, f.label]))}
+                value={null}
+                onValueChange={(family: string | null) =>
+                    family &&
+                    onChange([
+                        ...overrides,
+                        {
+                            family,
+                            nameAttribute: '',
+                            descriptionAttribute: '',
+                            priceAttribute: '',
+                            imageAttributes: [],
+                        },
+                    ])
+                }
+            >
+                <SelectTrigger className="w-full max-w-sm">
+                    <SelectValue placeholder={overrides.length ? 'Add another family' : 'Add a family'} />
+                </SelectTrigger>
+                <SelectContent>
+                    {addable.map(f => (
+                        <SelectItem key={f.value} value={f.value}>
+                            {f.label}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
         </div>
     );
 }

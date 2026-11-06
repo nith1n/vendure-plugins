@@ -2,12 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { RequestContext, TransactionalConnection, UserInputError } from '@vendure/core';
 
 import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
-import { AkeneoChannel, AkeneoPage } from '../akeneo/akeneo-types';
-import { AkeneoConnectionSettings, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
+import { AKENEO_IMAGE_ATTRIBUTE_TYPES, AkeneoChannel, AkeneoPage } from '../akeneo/akeneo-types';
+import {
+    AkeneoConnectionSettings,
+    AkeneoFamilyOverride,
+    AkeneoLocaleMapping,
+} from '../entities/akeneo-connection-settings.entity';
 import {
     AkeneoAttributeChoice,
     AkeneoCategoryTreeOption,
     AkeneoChannelOption,
+    AkeneoFamilyOption,
     SaveAkeneoSyncSettingsInput,
 } from '../types';
 import { displayLabel, suggestLocaleMapping } from '../utils/locales';
@@ -17,7 +22,7 @@ import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.se
 
 const TEXT_TYPES = ['pim_catalog_text', 'pim_catalog_textarea'];
 const PRICE_TYPE = 'pim_catalog_price_collection';
-const CHOICE_TYPES = [...TEXT_TYPES, PRICE_TYPE];
+const CHOICE_TYPES = [...TEXT_TYPES, PRICE_TYPE, ...AKENEO_IMAGE_ATTRIBUTE_TYPES];
 
 /**
  * What to sync for a Vendure channel: the Akeneo channel, which Akeneo locale feeds each
@@ -116,16 +121,78 @@ export class AkeneoSyncSettingsService {
             [PRICE_TYPE],
             'price',
         );
+        const familyOverrides = await this.checkFamilyOverrides(client, input.familyOverrides ?? []);
 
         settings.channelCode = channel.code;
         settings.productNameAttribute = nameAttribute;
         settings.productDescriptionAttribute = descriptionAttribute;
         settings.productPriceAttribute = priceAttribute;
+        settings.syncImages = input.syncImages ?? false;
+        settings.familyOverrides = familyOverrides;
         settings.localeMapping = input.localeMapping;
         settings.categoryTreeCodes = treeCodes;
         settings.includeCategoryRoot = input.includeCategoryRoot;
         settings.enabled = input.enabled;
         return this.connection.getRepository(ctx, AkeneoConnectionSettings).save(settings);
+    }
+
+    async getFamilyOptions(ctx: RequestContext): Promise<AkeneoFamilyOption[]> {
+        const client = await this.akeneoApiService.getClient(ctx);
+        const families = await collect(client, await client.families());
+        return families.map(f => ({
+            code: f.code,
+            label: displayLabel(f.labels, ctx.languageCode, f.code),
+            attributes: f.attributes,
+        }));
+    }
+
+    /**
+     * Each override's family exists once, and its attributes have the right type and belong to
+     * the family. Overrides without any attribute set are dropped.
+     */
+    private async checkFamilyOverrides(
+        client: AkeneoApiClient,
+        overrides: AkeneoFamilyOverride[],
+    ): Promise<AkeneoFamilyOverride[]> {
+        const checked: AkeneoFamilyOverride[] = [];
+        for (const override of overrides) {
+            if (checked.some(o => o.family === override.family)) {
+                throw new UserInputError(`Family "${override.family}" is overridden more than once`);
+            }
+            const family = await client.family(override.family).catch(() => undefined);
+            if (!family) throw new UserInputError(`Akeneo family "${override.family}" does not exist`);
+
+            const check = async (code: string | null | undefined, types: string[], kind: string) => {
+                if (code && !family.attributes.includes(code)) {
+                    throw new UserInputError(`"${code}" is not an attribute of family "${family.code}"`);
+                }
+                return this.checkAttribute(client, code, types, kind);
+            };
+            const imageAttributes: string[] = [];
+            for (const code of override.imageAttributes ?? []) {
+                if (imageAttributes.includes(code)) {
+                    throw new UserInputError(`Image attribute "${code}" is selected more than once`);
+                }
+                const image = await check(code, AKENEO_IMAGE_ATTRIBUTE_TYPES, 'image');
+                if (image) imageAttributes.push(image);
+            }
+            const result: AkeneoFamilyOverride = {
+                family: family.code,
+                nameAttribute: await check(override.nameAttribute, TEXT_TYPES, 'text'),
+                descriptionAttribute: await check(override.descriptionAttribute, TEXT_TYPES, 'text'),
+                priceAttribute: await check(override.priceAttribute, [PRICE_TYPE], 'price'),
+                imageAttributes,
+            };
+            if (
+                result.nameAttribute ||
+                result.descriptionAttribute ||
+                result.priceAttribute ||
+                result.imageAttributes.length
+            ) {
+                checked.push(result);
+            }
+        }
+        return checked;
     }
 
     /** The attribute code if it exists with one of the types; null when not set. */
@@ -155,7 +222,7 @@ export class AkeneoSyncSettingsService {
     }
 }
 
-/** Option lists are small (channels, tree roots), so reading every page is fine. */
+/** Option lists are small (channels, tree roots, families), so reading every page is fine. */
 async function collect<T>(client: AkeneoApiClient, first: AkeneoPage<T>): Promise<T[]> {
     const items: T[] = [];
     for await (const page of client.pages(first)) items.push(...page.items);

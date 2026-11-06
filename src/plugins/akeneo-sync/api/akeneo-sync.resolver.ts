@@ -8,6 +8,7 @@ import { AkeneoProductSyncService, ProductSyncStatus } from '../services/akeneo-
 import { AkeneoSyncSettingsService } from '../services/akeneo-sync-settings.service';
 import {
     AkeneoAttributeChoice,
+    AkeneoFamilyOption,
     AkeneoCategoryTreeOption,
     AkeneoChannelOption,
     SaveAkeneoSyncSettingsInput,
@@ -37,6 +38,12 @@ export class AkeneoSyncAdminResolver {
     @Allow(manageAkeneoSyncPermission.Permission)
     akeneoAttributeChoices(@Ctx() ctx: RequestContext): Promise<AkeneoAttributeChoice[]> {
         return this.syncSettingsService.getAttributeChoices(ctx);
+    }
+
+    @Query()
+    @Allow(manageAkeneoSyncPermission.Permission)
+    akeneoFamilies(@Ctx() ctx: RequestContext): Promise<AkeneoFamilyOption[]> {
+        return this.syncSettingsService.getFamilyOptions(ctx);
     }
 
     @Query()
