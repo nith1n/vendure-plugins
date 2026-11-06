@@ -69,7 +69,7 @@ type ProductSyncTotals = {
     skipped: number;
 };
 
-interface ProductSyncJobData extends SyncRunJobData {
+export interface ProductSyncJobData extends SyncRunJobData {
     ctx: SerializedRequestContext;
     totals: ProductSyncTotals;
     /** Settings snapshot taken when the run starts, so a run stays consistent if they change. */

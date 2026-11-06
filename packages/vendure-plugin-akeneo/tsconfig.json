@@ -12,18 +12,17 @@
     "strict": true,
     "sourceMap": false,
     "skipLibCheck": true,
-    "outDir": "./dist",
+    "outDir": "./dev-server/dist",
     "baseUrl": "./"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "dev-server/**/*.ts"],
   "exclude": [
     "node_modules",
-    "migration.ts",
-    "src/plugins/**/ui/*",
-    "admin-ui",
-    "src/plugins/**/dashboard/*",
-    "src/gql/*",
-    "vite.*.*ts"
+    "dist",
+    "dev-server/dist",
+    "src/dashboard/*",
+    "dev-server/gql/*",
+    "dev-server/vite.*.*ts"
   ],
   "ts-node": {
     "files": true

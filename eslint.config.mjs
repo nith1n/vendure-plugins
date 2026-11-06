@@ -7,7 +7,13 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
     {
         // Build output and generated code
-        ignores: ['dist/**', 'node_modules/**', 'static/**', 'src/gql/**', 'src/migrations/**'],
+        ignores: [
+            '**/dist/**',
+            '**/node_modules/**',
+            'packages/*/dev-server/static/**',
+            'packages/*/dev-server/gql/**',
+            'packages/*/dev-server/migrations/**',
+        ],
     },
     eslint.configs.recommended,
     ...tseslint.configs.recommendedTypeChecked,
@@ -15,7 +21,7 @@ export default tseslint.config(
         languageOptions: {
             globals: globals.node,
             parserOptions: {
-                project: ['./tsconfig.json', './tsconfig.dashboard.json'],
+                project: ['./packages/*/tsconfig.json', './packages/*/tsconfig.dashboard.json'],
                 tsconfigRootDir: import.meta.dirname,
             },
         },

@@ -14,7 +14,7 @@ export default defineConfig({
             // to find any plugins which have dashboard extensions, as well as
             // to introspect the GraphQL schema based on any API extensions
             // and custom fields that are configured.
-            vendureConfigPath: pathToFileURL('./src/vendure-config.ts'),
+            vendureConfigPath: pathToFileURL(join(__dirname, 'vendure-config.ts')),
             // Points to the location of your Vendure server.
             // In production, 'auto' lets the dashboard derive the API URL from the
             // server that serves it. In development, we use explicit defaults so that
@@ -27,14 +27,14 @@ export default defineConfig({
             // be introspected and the types will be generated in this location.
             // These types can be used in your dashboard extensions to provide
             // type safety when writing queries and mutations.
-            gqlOutputPath: './src/gql',
+            gqlOutputPath: join(__dirname, 'gql'),
         }),
     ],
     resolve: {
         alias: {
             // This allows all plugins to reference a shared set of
             // GraphQL types.
-            '@/gql': resolve(__dirname, './src/gql/graphql.ts'),
+            '@/gql': resolve(__dirname, './gql/graphql.ts'),
         },
     },
 });

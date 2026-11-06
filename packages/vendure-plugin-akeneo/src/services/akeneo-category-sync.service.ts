@@ -43,7 +43,7 @@ type CategorySyncTotals = {
     unchanged: number;
 };
 
-interface CategorySyncJobData extends SyncRunJobData {
+export interface CategorySyncJobData extends SyncRunJobData {
     ctx: SerializedRequestContext;
     /** Totals of the pages before this one, carried forward so the latest job describes the run. */
     totals: CategorySyncTotals;

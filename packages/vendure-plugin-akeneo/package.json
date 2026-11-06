@@ -1,0 +1,71 @@
+{
+  "name": "@valoriz/vendure-plugin-akeneo",
+  "version": "0.1.0",
+  "description": "Sync categories, products, variants and images from Akeneo PIM to Vendure, with a dashboard to configure and run the sync.",
+  "license": "MIT",
+  "keywords": [
+    "vendure",
+    "vendure-plugin",
+    "akeneo",
+    "pim",
+    "product-sync"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "vendure dev all --project . --server-entry ./dev-server/index.ts --worker-entry ./dev-server/index-worker.ts --vite-config ./dev-server/vite.config.mts",
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "migrate": "vendure migrate --config ./dev-server/vendure-config.ts --output-dir ./dev-server/migrations",
+    "prepack": "node scripts/build.mjs"
+  },
+  "peerDependencies": {
+    "@vendure/core": "^3.8.0",
+    "@vendure/dashboard": "^3.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@vendure/dashboard": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@graphql-typed-document-node/core": "3.2.0",
+    "@nestjs/common": "12.3.2",
+    "@nestjs/graphql": "14.0.3",
+    "@tanstack/react-query": "5.105.3",
+    "@types/react": "19.3.0",
+    "@vendure/asset-server-plugin": "3.8.1",
+    "@vendure/cli": "3.8.1",
+    "@vendure/common": "3.8.1",
+    "@vendure/core": "3.8.1",
+    "@vendure/dashboard": "3.8.1",
+    "@vendure/email-plugin": "3.8.1",
+    "@vendure/graphiql-plugin": "3.8.1",
+    "dotenv": "18.0.9",
+    "gql.tada": "1.11.4",
+    "graphql": "16.14.2",
+    "graphql-tag": "2.12.7",
+    "lucide-react": "0.577.0",
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-hook-form": "7.91.0",
+    "sonner": "2.0.8",
+    "ts-node": "10.9.2",
+    "typeorm": "^0.3.31",
+    "typescript": "5.8.2",
+    "vite": "^7.3.7"
+  }
+}

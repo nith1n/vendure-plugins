@@ -6,7 +6,9 @@ import {
 
 /**
  * @description
- * The plugin can be configured using the following options:
+ * Options of {@link AkeneoSyncPlugin}, passed to `AkeneoSyncPlugin.init()`.
+ *
+ * @category Plugin
  */
 export interface PluginInitOptions {
     /**

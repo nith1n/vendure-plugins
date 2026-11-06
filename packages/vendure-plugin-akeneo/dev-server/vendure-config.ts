@@ -11,7 +11,8 @@ import { DashboardPlugin } from '@vendure/dashboard/plugin';
 import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import 'dotenv/config';
 import path from 'path';
-import { AkeneoSyncPlugin } from './plugins/akeneo-sync/akeneo-sync.plugin';
+// The plugin's source, so the dev server reloads on every change to it
+import { AkeneoSyncPlugin } from '../src';
 
 const IS_DEV = process.env.APP_ENV === 'dev';
 // PORT wins because hosting platforms inject it into the environment at runtime, and that
@@ -72,7 +73,7 @@ export const config: VendureConfig = {
         GraphiqlPlugin.init(),
         AssetServerPlugin.init({
             route: 'assets',
-            assetUploadDir: path.join(__dirname, '../static/assets'),
+            assetUploadDir: path.join(__dirname, './static/assets'),
             // For local dev, the correct value for assetUrlPrefix should
             // be guessed correctly, but for production it will usually need
             // to be set manually to match your production url.
@@ -87,7 +88,7 @@ export const config: VendureConfig = {
             ...(IS_DEV
                 ? {
                       devMode: true,
-                      outputPath: path.join(__dirname, '../static/email/test-emails'),
+                      outputPath: path.join(__dirname, './static/email/test-emails'),
                       route: 'mailbox',
                   }
                 : {
@@ -97,13 +98,13 @@ export const config: VendureConfig = {
                       // This is the same directory that dev mode uses. Nothing serves it over HTTP.
                       transport: {
                           type: 'file',
-                          outputPath: path.join(__dirname, '../static/email/test-emails'),
+                          outputPath: path.join(__dirname, './static/email/test-emails'),
                       },
                   }),
             // defaultEmailHandlers is typed as EmailEventHandler<any, any>[] by @vendure/email-plugin
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             handlers: defaultEmailHandlers,
-            templateLoader: new FileBasedTemplateLoader(path.join(__dirname, '../static/email/templates')),
+            templateLoader: new FileBasedTemplateLoader(path.join(__dirname, './static/email/templates')),
             globalTemplateVars: {
                 // The following variables will change depending on your storefront implementation.
                 // No storefront was created, so port 3001 is only a placeholder:
@@ -118,7 +119,7 @@ export const config: VendureConfig = {
         }),
         DashboardPlugin.init({
             route: 'dashboard',
-            appDir: IS_DEV ? path.join(__dirname, '../dist/dashboard') : path.join(__dirname, 'dashboard'),
+            appDir: path.join(__dirname, 'dist/dashboard'),
         }),
         AkeneoSyncPlugin.init({
             encryptionKey: process.env.AKENEO_ENCRYPTION_KEY,

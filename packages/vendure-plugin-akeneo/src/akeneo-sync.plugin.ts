@@ -22,6 +22,21 @@ import { AkeneoProductSyncService } from './services/akeneo-product-sync.service
 import { AkeneoSyncSettingsService } from './services/akeneo-sync-settings.service';
 import { PluginInitOptions } from './types';
 
+/**
+ * @description
+ * Syncs an Akeneo PIM catalog to Vendure: category trees to Collections, product models and
+ * products to Products and ProductVariants, and their images to Assets. Syncs run on demand from
+ * the dashboard (Settings > Akeneo Sync), in the job queue.
+ *
+ * @example
+ * ```ts
+ * AkeneoSyncPlugin.init({
+ *     encryptionKey: process.env.AKENEO_ENCRYPTION_KEY,
+ * }),
+ * ```
+ *
+ * @category Plugin
+ */
 @VendurePlugin({
     imports: [PluginCommonModule],
     providers: [
@@ -54,9 +69,10 @@ import { PluginInitOptions } from './types';
     },
     exports: [AkeneoConnectionSettingsService, AkeneoApiService],
     dashboard: './dashboard/index.tsx',
-    compatibility: '^3.0.0',
+    compatibility: '^3.8.0',
 })
 export class AkeneoSyncPlugin {
+    /** @internal */
     static options: PluginInitOptions = {};
 
     static init(options: PluginInitOptions): Type<AkeneoSyncPlugin> {
