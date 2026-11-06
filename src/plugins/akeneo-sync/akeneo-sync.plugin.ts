@@ -15,6 +15,7 @@ import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
 import { AkeneoAssetSyncService } from './services/akeneo-asset-sync.service';
 import { AkeneoCategorySyncService } from './services/akeneo-category-sync.service';
+import { AkeneoCleanupService } from './services/akeneo-cleanup.service';
 import { AkeneoConnectionSettingsService } from './services/akeneo-connection-settings.service';
 import { AkeneoProductSyncService } from './services/akeneo-product-sync.service';
 import { AkeneoSyncSettingsService } from './services/akeneo-sync-settings.service';
@@ -30,6 +31,7 @@ import { PluginInitOptions } from './types';
         AkeneoSyncSettingsService,
         AkeneoProductSyncService,
         AkeneoAssetSyncService,
+        AkeneoCleanupService,
     ],
     entities: [AkeneoConnectionSettings, AkeneoVariantCategory],
     adminApiExtensions: {

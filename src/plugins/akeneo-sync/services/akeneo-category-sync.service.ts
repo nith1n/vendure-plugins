@@ -20,13 +20,12 @@ import { In } from 'typeorm';
 import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoCategory, AkeneoLabels } from '../akeneo/akeneo-types';
 import { AKENEO_CATEGORY_FILTER_CODE } from '../config/akeneo-category-collection-filter';
-import { loggerCtx } from '../constants';
+import { CATEGORY_SYNC_QUEUE, CLEANUP_QUEUE, loggerCtx } from '../constants';
 import { AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
 import {
-    ACTIVE_JOB_STATES,
     errorText,
     findChannelJobs,
-    hasActiveRun,
+    assertNoActiveRun,
     runState,
     SyncRunJobData,
     SyncRunState,
@@ -98,7 +97,7 @@ interface TreeContext {
     localeMapping: AkeneoLocaleMapping[];
 }
 
-const QUEUE_NAME = 'akeneo-category-sync';
+const QUEUE_NAME = CATEGORY_SYNC_QUEUE;
 const JOB_RETRIES = 3;
 const EMPTY_TOTALS: CategorySyncTotals = { pages: 0, categories: 0, created: 0, updated: 0, unchanged: 0 };
 
@@ -144,11 +143,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         if (!settings.localeMapping.some(m => m.languageCode === defaultLanguage)) {
             throw new UserInputError(`Map an Akeneo locale to the default language "${defaultLanguage}"`);
         }
-        const jobs = await findChannelJobs(this.configService, ctx, QUEUE_NAME, {
-            state: { in: ACTIVE_JOB_STATES },
-        });
-        if (hasActiveRun(jobs))
-            throw new UserInputError('A category sync is already running for this channel');
+        await assertNoActiveRun(this.configService, ctx, [QUEUE_NAME, CLEANUP_QUEUE]);
 
         return this.queue.add(
             {

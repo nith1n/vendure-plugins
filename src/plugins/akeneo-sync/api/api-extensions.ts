@@ -137,6 +137,58 @@ export const adminApiExtensions = gql`
         failed: Int!
     }
 
+    enum AkeneoCleanupMode {
+        "Finds leftovers without changing anything"
+        SCAN
+        "Removes the leftovers of a scan that a fresh scan still finds"
+        REMOVE
+    }
+
+    type AkeneoCleanupKind {
+        count: Int!
+        "A few names, for the preview"
+        examples: [String!]!
+    }
+
+    "A leftover that cleanup leaves alone, and why"
+    type AkeneoCleanupKept {
+        kind: String!
+        name: String!
+        reason: String!
+    }
+
+    type AkeneoCleanupPlan {
+        "Products no longer in the Akeneo channel (soft-deleted with their variants)"
+        products: AkeneoCleanupKind!
+        "Variants no longer in Akeneo, of products that stay"
+        variants: AkeneoCleanupKind!
+        "Collections of categories that are no longer synced, with their descendants"
+        collections: AkeneoCleanupKind!
+        "Akeneo images nothing uses"
+        assets: AkeneoCleanupKind!
+        kept: [AkeneoCleanupKept!]!
+    }
+
+    type AkeneoCleanupRemoved {
+        products: Int!
+        variants: Int!
+        collections: Int!
+        assets: Int!
+    }
+
+    "Latest cleanup job of the active channel"
+    type AkeneoCleanupStatus {
+        jobId: ID!
+        mode: AkeneoCleanupMode!
+        state: AkeneoSyncRunState!
+        startedAt: DateTime!
+        finishedAt: DateTime
+        error: String
+        "What the scan found, or what a remove job worked on"
+        plan: AkeneoCleanupPlan
+        removed: AkeneoCleanupRemoved
+    }
+
     input AkeneoLocaleMappingInput {
         languageCode: LanguageCode!
         locale: String!
@@ -225,6 +277,8 @@ export const adminApiExtensions = gql`
         akeneoCategorySyncStatus: AkeneoCategorySyncStatus
         "Null if no product sync has run for this channel yet"
         akeneoProductSyncStatus: AkeneoProductSyncStatus
+        "Null if no cleanup has run for this channel yet"
+        akeneoCleanupStatus: AkeneoCleanupStatus
     }
 
     extend type Mutation {
@@ -236,5 +290,9 @@ export const adminApiExtensions = gql`
         startAkeneoCategorySync: Job!
         "Queues a sync of the Akeneo channel's products to Products and ProductVariants, one page per job."
         startAkeneoProductSync: Job!
+        "Queues a scan for synced items Akeneo no longer has. Changes nothing."
+        scanAkeneoLeftovers: Job!
+        "Queues removal of what the given scan found and a fresh scan still finds."
+        removeAkeneoLeftovers(scanJobId: ID!): Job!
     }
 `;

@@ -178,3 +178,61 @@ export const startAkeneoProductSyncMutation = graphql(`
         }
     }
 `);
+
+export const akeneoCleanupStatusQuery = graphql(`
+    query AkeneoCleanupStatus {
+        akeneoCleanupStatus {
+            jobId
+            mode
+            state
+            startedAt
+            finishedAt
+            error
+            plan {
+                products {
+                    count
+                    examples
+                }
+                variants {
+                    count
+                    examples
+                }
+                collections {
+                    count
+                    examples
+                }
+                assets {
+                    count
+                    examples
+                }
+                kept {
+                    kind
+                    name
+                    reason
+                }
+            }
+            removed {
+                products
+                variants
+                collections
+                assets
+            }
+        }
+    }
+`);
+
+export const scanAkeneoLeftoversMutation = graphql(`
+    mutation ScanAkeneoLeftovers {
+        scanAkeneoLeftovers {
+            id
+        }
+    }
+`);
+
+export const removeAkeneoLeftoversMutation = graphql(`
+    mutation RemoveAkeneoLeftovers($scanJobId: ID!) {
+        removeAkeneoLeftovers(scanJobId: $scanJobId) {
+            id
+        }
+    }
+`);

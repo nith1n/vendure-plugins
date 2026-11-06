@@ -26,6 +26,7 @@ import {
     validateAkeneoCredentialsMutation,
 } from './akeneo-settings.graphql';
 import { AkeneoCategorySyncBlock } from './akeneo-category-sync-block';
+import { AkeneoCleanupBlock } from './akeneo-cleanup-block';
 import { AkeneoProductSyncBlock } from './akeneo-product-sync-block';
 import { AkeneoSyncSettingsBlock } from './akeneo-sync-settings-block';
 
@@ -256,6 +257,9 @@ export function AkeneoSettingsPage() {
                 </PageBlock>
                 <PageBlock column="side" blockId="category-sync" title="Category sync">
                     <AkeneoCategorySyncBlock settings={settings} hasUnsavedSettings={syncSettingsDirty} />
+                </PageBlock>
+                <PageBlock column="side" blockId="cleanup" title="Cleanup">
+                    <AkeneoCleanupBlock settings={settings} hasUnsavedSettings={syncSettingsDirty} />
                 </PageBlock>
             </PageLayout>
         </Page>

@@ -1,5 +1,14 @@
 import { JobFilterParameter, JobState, SortOrder } from '@vendure/common/lib/generated-types';
-import { ConfigService, isInspectableJobQueueStrategy, Job, JobData, RequestContext } from '@vendure/core';
+import {
+    ConfigService,
+    isInspectableJobQueueStrategy,
+    Job,
+    JobData,
+    RequestContext,
+    UserInputError,
+} from '@vendure/core';
+
+import { ASSET_SYNC_QUEUE, CATEGORY_SYNC_QUEUE, CLEANUP_QUEUE, PRODUCT_SYNC_QUEUE } from '../constants';
 
 /**
  * Sync runs are chains of page jobs: each job processes one Akeneo page and queues the next,
@@ -44,6 +53,29 @@ export async function findChannelJobs<D extends SyncRunJobData & JobData<D>>(
 
 export function hasActiveRun(jobs: Job[]): boolean {
     return jobs.some(job => ACTIVE_JOB_STATES.includes(job.state));
+}
+
+const RUN_NAMES: Record<string, string> = {
+    [CATEGORY_SYNC_QUEUE]: 'A category sync',
+    [PRODUCT_SYNC_QUEUE]: 'A product sync',
+    [ASSET_SYNC_QUEUE]: 'A product sync (images)',
+    [CLEANUP_QUEUE]: 'A cleanup',
+};
+
+/** Throws when a run of any of the queues is going for the channel. */
+export async function assertNoActiveRun(
+    configService: ConfigService,
+    ctx: RequestContext,
+    queueNames: string[],
+): Promise<void> {
+    for (const queueName of queueNames) {
+        const jobs = await findChannelJobs(configService, ctx, queueName, {
+            state: { in: ACTIVE_JOB_STATES },
+        });
+        if (hasActiveRun(jobs)) {
+            throw new UserInputError(`${RUN_NAMES[queueName] ?? queueName} is running for this channel`);
+        }
+    }
 }
 
 /** While a page is queued or running the run is still going; otherwise its outcome is the run's. */

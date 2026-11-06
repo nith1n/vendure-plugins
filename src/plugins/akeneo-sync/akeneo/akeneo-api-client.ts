@@ -240,6 +240,7 @@ export class AkeneoApiClient {
         if (options.search) query.search = JSON.stringify(options.search);
         if (options.scope) query.scope = options.scope;
         if (options.locales?.length) query.locales = options.locales.join(',');
+        if (options.attributes?.length) query.attributes = options.attributes.join(',');
         return this.getPage<T>(`${API_PREFIX}${path}`, query);
     }
 

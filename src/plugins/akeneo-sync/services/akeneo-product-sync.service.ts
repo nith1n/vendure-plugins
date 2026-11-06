@@ -26,14 +26,14 @@ import { In, IsNull } from 'typeorm';
 import { AkeneoApiError } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups, findMainIdentifierAttribute, pickText, pickValue } from '../akeneo/akeneo-lookups';
 import { AkeneoLabels, AkeneoProduct, AkeneoValue, AkeneoValues } from '../akeneo/akeneo-types';
-import { loggerCtx } from '../constants';
+import { CLEANUP_QUEUE, PRODUCT_SYNC_QUEUE, loggerCtx } from '../constants';
 import { AkeneoFamilyOverride, AkeneoLocaleMapping } from '../entities/akeneo-connection-settings.entity';
 import { AkeneoVariantCategory } from '../entities/akeneo-variant-category.entity';
 import {
     ACTIVE_JOB_STATES,
     errorText,
     findChannelJobs,
-    hasActiveRun,
+    assertNoActiveRun,
     MAX_JOB_LOOKBACK,
     runState,
     SyncRunJobData,
@@ -144,7 +144,7 @@ interface AxisOption {
     names: Names;
 }
 
-const QUEUE_NAME = 'akeneo-product-sync';
+const QUEUE_NAME = PRODUCT_SYNC_QUEUE;
 const JOB_RETRIES = 3;
 const EMPTY_TOTALS: ProductSyncTotals = {
     pages: 0,
@@ -203,14 +203,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         if (!settings.localeMapping.some(m => m.languageCode === defaultLanguage)) {
             throw new UserInputError(`Map an Akeneo locale to the default language "${defaultLanguage}"`);
         }
-        const active = await findChannelJobs(this.configService, ctx, QUEUE_NAME, {
-            state: { in: ACTIVE_JOB_STATES },
-        });
-        const activeAssets = await findChannelJobs(this.configService, ctx, ASSET_QUEUE_NAME, {
-            state: { in: ACTIVE_JOB_STATES },
-        });
-        if (hasActiveRun(active) || hasActiveRun(activeAssets))
-            throw new UserInputError('A product sync is already running for this channel');
+        await assertNoActiveRun(this.configService, ctx, [QUEUE_NAME, ASSET_QUEUE_NAME, CLEANUP_QUEUE]);
 
         // Products "belong" to an Akeneo channel when classified in its category tree
         const client = await this.akeneoApiService.getClient(ctx);

@@ -22,7 +22,7 @@ import { In } from 'typeorm';
 import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups } from '../akeneo/akeneo-lookups';
 import { AkeneoAsset, AkeneoAssetValue } from '../akeneo/akeneo-types';
-import { loggerCtx } from '../constants';
+import { ASSET_SYNC_QUEUE, loggerCtx } from '../constants';
 import { SyncRunJobData } from '../utils/sync-runs';
 
 import { AkeneoApiService } from './akeneo-api.service';
@@ -68,7 +68,7 @@ interface ResolvedImage {
 
 type AssetHolder = Product | ProductVariant;
 
-export const ASSET_QUEUE_NAME = 'akeneo-asset-sync';
+export const ASSET_QUEUE_NAME = ASSET_SYNC_QUEUE;
 const JOB_RETRIES = 3;
 const MEDIA_FILE_TYPE = 'media_file';
 

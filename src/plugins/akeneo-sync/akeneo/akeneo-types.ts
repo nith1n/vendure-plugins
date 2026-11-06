@@ -32,6 +32,8 @@ export interface AkeneoListOptions {
     scope?: string;
     /** Only return values for these locales (and non-localizable ones). */
     locales?: string[];
+    /** Only return values of these attributes. */
+    attributes?: string[];
 }
 
 export interface AkeneoChannel {
