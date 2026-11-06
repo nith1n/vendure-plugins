@@ -10,6 +10,7 @@ import { akeneoCategoryCollectionFilter } from './config/akeneo-category-collect
 import { AKENEO_SYNC_PLUGIN_OPTIONS } from './constants';
 import { akeneoCustomFields } from './custom-fields';
 import { AkeneoConnectionSettings } from './entities/akeneo-connection-settings.entity';
+import { AkeneoImageRun } from './entities/akeneo-image-run.entity';
 import { AkeneoVariantCategory } from './entities/akeneo-variant-category.entity';
 import { manageAkeneoSyncPermission } from './permissions';
 import { AkeneoApiService } from './services/akeneo-api.service';
@@ -33,7 +34,7 @@ import { PluginInitOptions } from './types';
         AkeneoAssetSyncService,
         AkeneoCleanupService,
     ],
-    entities: [AkeneoConnectionSettings, AkeneoVariantCategory],
+    entities: [AkeneoConnectionSettings, AkeneoVariantCategory, AkeneoImageRun],
     adminApiExtensions: {
         schema: adminApiExtensions,
         resolvers: [

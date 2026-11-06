@@ -27,8 +27,6 @@ export const ACTIVE_JOB_STATES = [JobState.PENDING, JobState.RUNNING, JobState.R
 
 /** How many recent jobs of a queue to look through for a channel's latest run. */
 const DEFAULT_LOOKBACK = 50;
-/** The most jobs the job queue strategy returns in one list. */
-export const MAX_JOB_LOOKBACK = 100;
 
 /** Jobs of the queue for the active channel, newest first. Jobs without a `runId` are ignored. */
 export async function findChannelJobs<D extends SyncRunJobData & JobData<D>>(

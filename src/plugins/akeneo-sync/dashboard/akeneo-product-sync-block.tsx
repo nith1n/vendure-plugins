@@ -48,6 +48,7 @@ export function AkeneoProductSyncBlock({
                     s.state === 'RUNNING'
                         ? `${s.pages} page(s) done, ${s.products} variants so far`
                         : `${s.products} variants, ${s.productsCreated} new products`,
+                    s.skipped ? `${s.skipped} skipped: synced by another channel` : null,
                     imageSummary(s.images),
                 ]
                     .filter(Boolean)

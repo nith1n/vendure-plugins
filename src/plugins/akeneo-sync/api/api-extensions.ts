@@ -115,6 +115,8 @@ export const adminApiExtensions = gql`
         unchanged: Int!
         "Vendure Products created (one per root product model or simple product)"
         productsCreated: Int!
+        "Akeneo products left alone because another channel's sync owns their Vendure Product"
+        skipped: Int!
         images: AkeneoImageSyncCounts!
         startedAt: DateTime!
         finishedAt: DateTime

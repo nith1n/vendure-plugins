@@ -23,6 +23,7 @@ import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups } from '../akeneo/akeneo-lookups';
 import { AkeneoAsset, AkeneoAssetValue } from '../akeneo/akeneo-types';
 import { ASSET_SYNC_QUEUE, loggerCtx } from '../constants';
+import { AkeneoImageRun } from '../entities/akeneo-image-run.entity';
 import { SyncRunJobData } from '../utils/sync-runs';
 
 import { AkeneoApiService } from './akeneo-api.service';
@@ -67,6 +68,7 @@ interface ResolvedImage {
 }
 
 type AssetHolder = Product | ProductVariant;
+type RunColumn = 'queued' | 'completed' | 'failed' | keyof AssetSyncCounts;
 
 export const ASSET_QUEUE_NAME = ASSET_SYNC_QUEUE;
 const JOB_RETRIES = 3;
@@ -97,12 +99,44 @@ export class AkeneoAssetSyncService implements OnModuleInit {
     async onModuleInit() {
         this.queue = await this.jobQueueService.createQueue({
             name: ASSET_QUEUE_NAME,
-            process: job => this.syncAssets(job.data),
+            process: async job => {
+                const ctx = RequestContext.deserialize(job.data.ctx);
+                try {
+                    const counts = await this.syncAssets(job.data);
+                    await this.addToRun(ctx, job.data.runId, { completed: 1, ...counts });
+                    return counts;
+                } catch (e) {
+                    // Attempts are counted before a job runs, so this was the last one
+                    if (job.attempts > job.retries) await this.addToRun(ctx, job.data.runId, { failed: 1 });
+                    throw e;
+                }
+            },
         });
     }
 
-    add(data: AssetSyncJobData) {
+    async add(ctx: RequestContext, data: AssetSyncJobData) {
+        await this.connection
+            .getRepository(ctx, AkeneoImageRun)
+            .createQueryBuilder()
+            .insert()
+            .values({ runId: data.runId })
+            .orIgnore()
+            .execute();
+        await this.addToRun(ctx, data.runId, { queued: 1 });
         return this.queue.add(data, { retries: JOB_RETRIES });
+    }
+
+    /** Image totals of a product sync run; null for runs without image jobs. */
+    findRun(ctx: RequestContext, runId: string): Promise<AkeneoImageRun | null> {
+        return this.connection.getRepository(ctx, AkeneoImageRun).findOne({ where: { runId } });
+    }
+
+    private async addToRun(ctx: RequestContext, runId: string, amounts: Partial<Record<RunColumn, number>>) {
+        const repository = this.connection.getRepository(ctx, AkeneoImageRun);
+        // Atomic increments: a run's asset jobs can finish at the same time
+        for (const [column, amount] of Object.entries(amounts)) {
+            if (amount) await repository.increment({ runId }, column, amount);
+        }
     }
 
     private async syncAssets(data: AssetSyncJobData): Promise<AssetSyncCounts> {

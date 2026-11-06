@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { CurrencyCode, JobState, LanguageCode } from '@vendure/common/lib/generated-types';
+import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
@@ -34,7 +34,6 @@ import {
     errorText,
     findChannelJobs,
     assertNoActiveRun,
-    MAX_JOB_LOOKBACK,
     runState,
     SyncRunJobData,
     SyncRunState,
@@ -60,6 +59,8 @@ type ProductSyncTotals = {
     updated: number;
     unchanged: number;
     productsCreated: number;
+    /** Akeneo products whose Vendure Product another channel's sync owns. */
+    skipped: number;
 };
 
 interface ProductSyncJobData extends SyncRunJobData {
@@ -115,7 +116,7 @@ type Run = Pick<
     | 'identifierAttribute'
 >;
 type Names = Map<LanguageCode, string>;
-type Counts = Pick<ProductSyncTotals, 'created' | 'updated' | 'unchanged' | 'productsCreated'>;
+type Counts = Pick<ProductSyncTotals, 'created' | 'updated' | 'unchanged' | 'productsCreated' | 'skipped'>;
 /** Image targets of a page by `product:<id>` / `variant:<id>`. */
 type ImageTargets = Map<string, AkeneoImageTarget>;
 
@@ -153,6 +154,7 @@ const EMPTY_TOTALS: ProductSyncTotals = {
     updated: 0,
     unchanged: 0,
     productsCreated: 0,
+    skipped: 0,
 };
 
 /**
@@ -246,10 +248,12 @@ export class AkeneoProductSyncService implements OnModuleInit {
         // A run is still going while its images download
         const productState = runState(latest);
         const state = productState === 'COMPLETED' && images.pending ? 'RUNNING' : productState;
+        const totals = result?.totals ?? latest.data.totals;
         return {
             runId: latest.data.runId,
             state,
-            ...(result?.totals ?? latest.data.totals),
+            ...totals,
+            skipped: totals.skipped ?? 0,
             images,
             startedAt: new Date(latest.data.startedAt),
             finishedAt: state === 'RUNNING' ? null : (latest.settledAt ?? null),
@@ -257,34 +261,23 @@ export class AkeneoProductSyncService implements OnModuleInit {
         };
     }
 
-    /** Image counts summed over the run's asset jobs. */
+    /** Image totals of the run, which its asset jobs add up as they finish. */
     private async imageStatus(ctx: RequestContext, runId: string): Promise<ImageSyncStatus> {
-        const jobs = await findChannelJobs<AssetSyncJobData>(
-            this.configService,
-            ctx,
-            ASSET_QUEUE_NAME,
-            {},
-            MAX_JOB_LOOKBACK,
-        );
-        const status: ImageSyncStatus = {
-            downloaded: 0,
-            reused: 0,
-            assigned: 0,
-            skipped: 0,
-            pending: 0,
-            failed: 0,
+        const run = await this.assetSyncService.findRun(ctx, runId);
+        if (!run) return { downloaded: 0, reused: 0, assigned: 0, skipped: 0, pending: 0, failed: 0 };
+        // Jobs cancelled by hand never report back, so only count jobs while some are still active
+        const active = await findChannelJobs<AssetSyncJobData>(this.configService, ctx, ASSET_QUEUE_NAME, {
+            state: { in: ACTIVE_JOB_STATES },
+        });
+        const stillActive = active.some(job => job.data.runId === runId);
+        return {
+            downloaded: run.downloaded,
+            reused: run.reused,
+            assigned: run.assigned,
+            skipped: run.skipped,
+            pending: stillActive ? Math.max(run.queued - run.completed - run.failed, 0) : 0,
+            failed: run.failed,
         };
-        for (const job of jobs.filter(j => j.data.runId === runId)) {
-            if (ACTIVE_JOB_STATES.includes(job.state)) status.pending++;
-            else if (job.state === JobState.FAILED) status.failed++;
-            const counts = job.result as AssetSyncCounts | undefined;
-            if (!counts) continue;
-            status.downloaded += counts.downloaded;
-            status.reused += counts.reused;
-            status.assigned += counts.assigned;
-            status.skipped += counts.skipped;
-        }
-        return status;
     }
 
     private async syncPage(data: ProductSyncJobData): Promise<ProductSyncPageResult> {
@@ -319,7 +312,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         // Queued after the page's transaction, so the job sees its products and variants
         const locale = this.defaultLocale(ctx, run);
         if (imageTargets.size && locale) {
-            await this.assetSyncService.add({
+            await this.assetSyncService.add(ctx, {
                 ctx: data.ctx,
                 channelId: data.channelId,
                 runId: data.runId,
@@ -337,6 +330,8 @@ export class AkeneoProductSyncService implements OnModuleInit {
             updated: data.totals.updated + counts.updated,
             unchanged: data.totals.unchanged + counts.unchanged,
             productsCreated: data.totals.productsCreated + counts.productsCreated,
+            // Runs queued before skipping existed have no count yet
+            skipped: (data.totals.skipped ?? 0) + counts.skipped,
         };
         if (page.next) {
             await this.queue.add(
@@ -356,34 +351,37 @@ export class AkeneoProductSyncService implements OnModuleInit {
         run: Run,
         imageTargets: ImageTargets,
     ): Promise<Counts> {
-        const counts: Counts = { created: 0, updated: 0, unchanged: 0, productsCreated: 0 };
+        const counts: Counts = { created: 0, updated: 0, unchanged: 0, productsCreated: 0, skipped: 0 };
         const variants = await this.findVariants(
             ctx,
             items.map(i => i.uuid),
         );
-        const products = new Map<string, SyncedProduct>();
-        const touched = new Set<ID>();
+        // Null: the Product belongs to another channel's sync
+        const products = new Map<string, SyncedProduct | null>();
+        const enabledChanged = new Set<ID>();
         const changedCategories = new Set<string>();
 
         for (const item of items) {
             const target = await this.resolveTarget(item, lookups, run);
-            let product = products.get(target.key);
-            if (!product) {
-                product = await this.upsertProduct(ctx, target, lookups, run, counts);
-                products.set(target.key, product);
+            if (!products.has(target.key)) {
+                products.set(target.key, await this.upsertProduct(ctx, target, lookups, run, counts));
+            }
+            const product = products.get(target.key);
+            const existingVariant = variants.get(item.uuid);
+            if (!product || (existingVariant && ownership(ctx, existingVariant.product) === 'other')) {
+                counts.skipped++;
+                continue;
             }
             const options: AxisOption[] = [];
             for (const axis of target.axes) {
                 options.push(await this.upsertAxisOption(ctx, product, axis, item, lookups, run));
             }
-            const { outcome, id } = await this.upsertVariant(
-                ctx,
-                item,
-                product,
-                options,
-                variants.get(item.uuid),
-                run,
-            );
+            const {
+                outcome,
+                id,
+                enabledChanged: variantEnabledChanged,
+            } = await this.upsertVariant(ctx, item, product, options, existingVariant, run);
+            if (variantEnabledChanged) enabledChanged.add(product.id);
             const categories = await this.withAncestors(item.categories, lookups);
             const categoriesChanged = await this.syncVariantCategories(
                 ctx,
@@ -392,12 +390,12 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 changedCategories,
             );
             counts[outcome === 'unchanged' && categoriesChanged ? 'updated' : outcome]++;
-            touched.add(product.id);
             if (run.syncImages) {
                 await this.collectImages(ctx, item, target, product.id, id, lookups, run, imageTargets);
             }
         }
-        await this.syncProductEnabled(ctx, touched);
+        // Only where Akeneo changed a variant, so a Product disabled in Vendure stays disabled
+        await this.syncProductEnabled(ctx, enabledChanged);
         await this.reapplyCategoryCollections(ctx, changedCategories);
         return counts;
     }
@@ -436,13 +434,23 @@ export class AkeneoProductSyncService implements OnModuleInit {
         lookups: AkeneoLookups,
         run: Run,
         counts: Counts,
-    ): Promise<SyncedProduct> {
+    ): Promise<SyncedProduct | null> {
         const names = await this.productNames(ctx, target, lookups, run);
         const descriptions = this.descriptions(ctx, target, run);
         let existing = await this.connection.getRepository(ctx, Product).findOne({
             where: { customFields: { [target.field]: target.value } },
-            relations: ['translations', 'optionGroups', 'optionGroups.options'],
+            relations: ['translations', 'optionGroups', 'optionGroups.options', 'channels'],
         });
+        if (existing && !existing.deletedAt) {
+            const owner = ownership(ctx, existing);
+            if (owner === 'other') return null;
+            if (owner === 'unclaimed') {
+                // Synced before ownership was recorded, and in this channel: this channel's sync owns it
+                await this.connection
+                    .getRepository(ctx, Product)
+                    .update(existing.id, { customFields: { akeneoChannelId: String(ctx.channelId) } });
+            }
+        }
         if (existing?.deletedAt) {
             // Deleted in Vendure: release the Akeneo id so a new Product can take it
             await this.connection
@@ -460,7 +468,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     slug: name,
                     description: descriptions?.get(languageCode) ?? '',
                 })),
-                customFields: { [target.field]: target.value },
+                customFields: { [target.field]: target.value, akeneoChannelId: String(ctx.channelId) },
             });
             counts.productsCreated++;
             return { id: created.id, names, groups: new Map() };
@@ -574,7 +582,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         options: AxisOption[],
         existing: ProductVariant | undefined,
         run: Run,
-    ): Promise<{ outcome: 'created' | 'updated' | 'unchanged'; id: ID }> {
+    ): Promise<{ outcome: 'created' | 'updated' | 'unchanged'; id: ID; enabledChanged: boolean }> {
         const sku = this.sku(item, run);
         const names = this.variantNames(product.names, options);
         const optionIds = options.map(o => o.id);
@@ -602,7 +610,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     customFields: { akeneoUuid: item.uuid },
                 },
             ]);
-            return { outcome: 'created', id: created.id };
+            return { outcome: 'created', id: created.id, enabledChanged: true };
         }
 
         const currentNames = new Map(existing.translations.map(t => [t.languageCode, t.name]));
@@ -626,7 +634,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
             !changedNames.length &&
             !optionsChanged
         ) {
-            return { outcome: 'unchanged', id: existing.id };
+            return { outcome: 'unchanged', id: existing.id, enabledChanged: false };
         }
         await this.productVariantService.update(ctx, [
             {
@@ -638,7 +646,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
                 ...(changedNames.length ? { translations: this.translations(new Map(changedNames)) } : {}),
             },
         ]);
-        return { outcome: 'updated', id: existing.id };
+        return { outcome: 'updated', id: existing.id, enabledChanged: existing.enabled !== item.enabled };
     }
 
     private async retireVariant(ctx: RequestContext, variant: ProductVariant, akeneoUuid: string) {
@@ -918,7 +926,7 @@ export class AkeneoProductSyncService implements OnModuleInit {
         if (!uuids.length) return new Map<string, ProductVariant>();
         const variants = await this.connection.getRepository(ctx, ProductVariant).find({
             where: { customFields: { akeneoUuid: In(uuids) } },
-            relations: ['translations', 'options', 'product', 'productVariantPrices'],
+            relations: ['translations', 'options', 'product', 'product.channels', 'productVariantPrices'],
         });
         return new Map(variants.map(v => [v.customFields.akeneoUuid as string, v]));
     }
@@ -926,4 +934,14 @@ export class AkeneoProductSyncService implements OnModuleInit {
 
 function sameRefs(a: AkeneoImageRef[], b: AkeneoImageRef[]): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Whose sync a synced Product belongs to. Products synced before ownership was recorded are
+ * unclaimed; the channel they are in may claim them.
+ */
+function ownership(ctx: RequestContext, product: Product): 'mine' | 'other' | 'unclaimed' {
+    const owner = product.customFields.akeneoChannelId;
+    if (owner) return owner === String(ctx.channelId) ? 'mine' : 'other';
+    return product.channels?.some(c => idsAreEqual(c.id, ctx.channelId)) ? 'unclaimed' : 'other';
 }

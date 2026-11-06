@@ -4,6 +4,7 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
     interface CustomProductFields {
         akeneoCode: string | null;
         akeneoUuid: string | null;
+        akeneoChannelId: string | null;
     }
     interface CustomProductVariantFields {
         akeneoUuid: string | null;
@@ -37,8 +38,13 @@ const akeneoField = (
  * Facets and FacetValues match on their built-in `code` (attribute / option code) instead.
  */
 export const akeneoCustomFields: CustomFields = {
-    // Product models (akeneoCode) and simple products without variants (akeneoUuid)
-    Product: [akeneoField('akeneoCode'), akeneoField('akeneoUuid')],
+    // Product models (akeneoCode) and simple products without variants (akeneoUuid). Only the
+    // Vendure channel whose sync created a Product updates or removes it.
+    Product: [
+        akeneoField('akeneoCode'),
+        akeneoField('akeneoUuid'),
+        { name: 'akeneoChannelId', type: 'string', nullable: true, internal: true, index: true },
+    ],
     ProductVariant: [akeneoField('akeneoUuid')],
     // Category code. Each Vendure channel syncs its own Collections, so the code is only unique
     // per owning channel (new Collections are always also assigned to the default channel).

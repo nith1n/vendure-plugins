@@ -156,6 +156,7 @@ export const akeneoProductSyncStatusQuery = graphql(`
             updated
             unchanged
             productsCreated
+            skipped
             images {
                 downloaded
                 reused

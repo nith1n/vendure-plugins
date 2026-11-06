@@ -222,6 +222,8 @@ export class AkeneoCleanupService implements OnModuleInit {
                 deletedAt: IsNull(),
                 customFields: { akeneoUuid: Not(IsNull()) },
                 channels: { id: ctx.channelId },
+                // Only Products this channel's sync owns; others are often in the default channel too
+                product: { customFields: { akeneoChannelId: String(ctx.channelId) } },
             },
             relations: ['product', 'product.channels', 'product.translations', 'product.variants'],
         });
