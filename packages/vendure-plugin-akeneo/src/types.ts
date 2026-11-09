@@ -31,6 +31,13 @@ export interface PluginInitOptions {
      * @default 10000
      */
     requestTimeoutMs?: number;
+    /**
+     * Largest image file downloaded from Akeneo, in bytes. Larger files are skipped and counted
+     * as skipped in the product sync's image counts.
+     *
+     * @default 52428800 (50 MB)
+     */
+    maxDownloadBytes?: number;
 }
 
 export interface SaveAkeneoConnectionSettingsInput {

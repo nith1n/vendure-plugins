@@ -59,6 +59,15 @@ function errorMessage(err: unknown): string {
     return err instanceof Error ? err.message : 'Unknown error';
 }
 
+/** The URL's origin, as the server stores it; the raw value while it isn't a valid URL. */
+function origin(value: string): string {
+    try {
+        return new URL(value.trim()).origin;
+    } catch {
+        return value.trim();
+    }
+}
+
 export function AkeneoSettingsPage() {
     const queryClient = useQueryClient();
     const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -136,6 +145,9 @@ export function AkeneoSettingsPage() {
     });
 
     const submitHandler = form.handleSubmit(values => saveMutation.mutate(values));
+    // The stored secret and password only work with the stored URL; a new URL needs them again
+    const urlChanged = !isNew && origin(form.watch('baseUrl')) !== settings.baseUrl;
+    const secretsRequired = isNew || urlChanged;
     const busy = saveMutation.isPending || testMutation.isPending;
     // Shared so the sync button can wait until sync settings are saved
     const [syncSettingsDirty, setSyncSettingsDirty] = useState(false);
@@ -184,11 +196,13 @@ export function AkeneoSettingsPage() {
                             name="secret"
                             label="Secret"
                             description={
-                                settings?.hasSecret
-                                    ? 'Saved. Leave blank to keep the current secret.'
-                                    : undefined
+                                urlChanged
+                                    ? 'Enter it again: the URL changed.'
+                                    : settings?.hasSecret
+                                      ? 'Saved. Leave blank to keep the current secret.'
+                                      : undefined
                             }
-                            rules={{ required: isNew ? 'The secret is required' : false }}
+                            rules={{ required: secretsRequired ? 'The secret is required' : false }}
                             render={({ field }) => (
                                 <PasswordInput
                                     {...field}
@@ -210,11 +224,13 @@ export function AkeneoSettingsPage() {
                             name="password"
                             label="API password"
                             description={
-                                settings?.hasPassword
-                                    ? 'Saved. Leave blank to keep the current password.'
-                                    : undefined
+                                urlChanged
+                                    ? 'Enter it again: the URL changed.'
+                                    : settings?.hasPassword
+                                      ? 'Saved. Leave blank to keep the current password.'
+                                      : undefined
                             }
-                            rules={{ required: isNew ? 'The password is required' : false }}
+                            rules={{ required: secretsRequired ? 'The password is required' : false }}
                             render={({ field }) => (
                                 <PasswordInput
                                     {...field}

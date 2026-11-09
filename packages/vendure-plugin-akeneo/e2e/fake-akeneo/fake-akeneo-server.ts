@@ -122,16 +122,23 @@ export class FakeAkeneoServer {
     private file(res: ServerResponse, code: string) {
         const file = this.data.files[code];
         if (!file) return send(res, 404, { message: `No file ${code}` });
-        res.writeHead(200, {
+        const name =
+            code
+                .split('/')
+                .pop()
+                ?.replace(/^[0-9a-f]{40}_/, '') ?? 'file';
+        const headers = {
             'Content-Type': file.contentType,
-            'Content-Disposition': `attachment; filename="${
-                code
-                    .split('/')
-                    .pop()
-                    ?.replace(/^[0-9a-f]{40}_/, '') ?? 'file'
-            }"`,
-        });
-        res.end(file.bytes);
+            'Content-Disposition': `attachment; filename="${name}"`,
+        };
+        if (!file.chunked) {
+            res.writeHead(200, headers);
+            return res.end(file.bytes);
+        }
+        // Without a Content-Length, so the size is only known once the body arrives
+        res.writeHead(200, { ...headers, 'Transfer-Encoding': 'chunked' });
+        for (let i = 0; i < file.bytes.length; i += 512) res.write(file.bytes.subarray(i, i + 512));
+        res.end();
     }
 
     private searchCategories(url: URL) {

@@ -75,7 +75,8 @@ export type FakeAkeneoData = {
             values: Record<string, Array<{ locale: string | null; channel: string | null; data: unknown }>>;
         }>
     >;
-    files: Record<string, { contentType: string; bytes: Buffer }>;
+    /** `chunked` files are sent without a Content-Length, as a stream of chunks. */
+    files: Record<string, { contentType: string; bytes: Buffer; chunked?: boolean }>;
 };
 
 /** A 1×1 PNG, so Vendure's content type check accepts the downloaded images. */
@@ -96,7 +97,12 @@ export const FILES = {
     belt: 'a/b/c/f/3333333333333333333333333333333333333333_belt.png',
     front: 'a/b/d/a/4444444444444444444444444444444444444444_front.png',
     poster: 'a/b/d/b/5555555555555555555555555555555555555555_poster.png',
+    large: 'a/b/d/c/6666666666666666666666666666666666666666_large.png',
+    largeChunked: 'a/b/d/d/7777777777777777777777777777777777777777_large_chunked.png',
 };
+
+/** Bigger than the download limit the image tests set, 1 KB. */
+const LARGE_PNG = Buffer.concat([PNG, Buffer.alloc(4096)]);
 
 /**
  * A small catalog covering each mapping case:
@@ -284,9 +290,13 @@ export function catalogFixture(): FakeAkeneoData {
                 },
             ],
         },
-        files: Object.fromEntries(
-            Object.values(FILES).map(code => [code, { contentType: 'image/png', bytes: PNG }]),
-        ),
+        files: {
+            ...Object.fromEntries(
+                Object.values(FILES).map(code => [code, { contentType: 'image/png', bytes: PNG }]),
+            ),
+            [FILES.large]: { contentType: 'image/png', bytes: LARGE_PNG },
+            [FILES.largeChunked]: { contentType: 'image/png', bytes: LARGE_PNG, chunked: true },
+        },
     };
 }
 

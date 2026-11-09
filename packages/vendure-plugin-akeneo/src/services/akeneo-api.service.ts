@@ -10,6 +10,7 @@ import { AkeneoConnectionSettingsService } from './akeneo-connection-settings.se
 
 const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 const MAX_RETRIES = 3;
+const DEFAULT_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
 
 /**
  * Hands out an {@link AkeneoApiClient} for the channel's stored connection. Clients are
@@ -38,6 +39,7 @@ export class AkeneoApiService {
             timeoutMs: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
             downloadTimeoutMs: DOWNLOAD_TIMEOUT_MS,
             maxRetries: MAX_RETRIES,
+            maxDownloadBytes: this.options.maxDownloadBytes ?? DEFAULT_MAX_DOWNLOAD_BYTES,
         });
         this.clients.set(ctx.channelId, { fingerprint, client });
         return client;

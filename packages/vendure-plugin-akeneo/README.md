@@ -55,11 +55,12 @@ The plugin ships a Dashboard extension: a **Settings > Akeneo Sync** page. If yo
 
 ### Options
 
-| Option                 | Default | Description                                                                                                             |
-| ---------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `encryptionKey`        |         | Key used to encrypt the Akeneo client secret and password at rest. Required to save or use a connection.                |
-| `allowInsecureBaseUrl` | `false` | Allow `http://` Akeneo URLs. Akeneo Cloud always uses HTTPS; only enable this for a local or self-hosted test instance. |
-| `requestTimeoutMs`     | `10000` | Timeout for each Akeneo API request. File downloads have a longer timeout of their own.                                 |
+| Option                 | Default    | Description                                                                                                             |
+| ---------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `encryptionKey`        |            | Key used to encrypt the Akeneo client secret and password at rest. Required to save or use a connection.                |
+| `allowInsecureBaseUrl` | `false`    | Allow `http://` Akeneo URLs. Akeneo Cloud always uses HTTPS; only enable this for a local or self-hosted test instance. |
+| `requestTimeoutMs`     | `10000`    | Timeout for each Akeneo API request. File downloads have a longer timeout of their own.                                 |
+| `maxDownloadBytes`     | `52428800` | Largest image file downloaded from Akeneo (50 MB). Larger files are skipped and counted as skipped.                     |
 
 ### Akeneo connection
 
@@ -128,6 +129,13 @@ Review the list and **Remove** to delete exactly that. Products and variants are
 | Image attribute or Asset Manager asset       | Asset, downloaded once and shared by everything that uses the same file                                                                                |
 
 Products moving between simple and variant in Akeneo are handled. Images added by hand in Vendure are kept: after the Akeneo images, or in your own order while the Akeneo images stay the same.
+
+## Security
+
+- **Credentials:** the client secret and password are encrypted at rest with your `encryptionKey` (AES-256-GCM). The API never returns them. They are only ever sent to the Akeneo URL they were entered for: changing the URL requires entering them again.
+- **Permissions:** everything the plugin offers requires `ManageAkeneoSync` on the active channel, and each channel's settings, syncs and cleanup are separate.
+- **Akeneo URL:** any HTTPS host can be configured, including internal addresses, since self-hosted Akeneo often runs on an internal network. Grant `ManageAkeneoSync` only to administrators you trust with that.
+- **Content from Akeneo:** product descriptions are copied as Akeneo stores them, which may include HTML. As with descriptions entered in Vendure, sanitize them in your storefront. Image files are checked against Vendure's permitted file types; if you don't want SVG images, leave them out of `assetOptions.permittedFileTypes`.
 
 ## API and storefront
 

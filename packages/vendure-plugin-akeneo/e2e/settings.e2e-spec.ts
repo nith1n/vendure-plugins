@@ -2,7 +2,13 @@ import { LanguageCode } from '@vendure/common/lib/generated-types';
 import gql from 'graphql-tag';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { FAKE_CLIENT_ID, FAKE_PASSWORD, FAKE_USERNAME } from './fake-akeneo/fake-akeneo-server';
+import { catalogFixture } from './fake-akeneo/fake-akeneo-data';
+import {
+    FAKE_CLIENT_ID,
+    FAKE_PASSWORD,
+    FAKE_USERNAME,
+    FakeAkeneoServer,
+} from './fake-akeneo/fake-akeneo-server';
 import {
     connect,
     createAkeneoTestEnvironment,
@@ -89,6 +95,39 @@ describe('Connection and sync settings', () => {
         expect(saveAkeneoSyncSettings.familyOverrides).toEqual([]);
     });
 
+    describe('stored credentials', () => {
+        const otherServer = new FakeAkeneoServer(catalogFixture());
+        beforeAll(() => otherServer.start());
+        afterAll(() => otherServer.stop());
+
+        it('are not sent to another URL when testing', async () => {
+            await expect(
+                adminClient.query(VALIDATE_INPUT, { input: { baseUrl: otherServer.url } }),
+            ).rejects.toThrow('Enter the secret and password again to test another Akeneo URL');
+            expect(otherServer.requests).toEqual([]);
+        });
+
+        it('are not kept when saving another URL', async () => {
+            await expect(
+                adminClient.query(SAVE_CONNECTION, {
+                    input: { baseUrl: otherServer.url, clientId: FAKE_CLIENT_ID, username: FAKE_USERNAME },
+                }),
+            ).rejects.toThrow('Enter the secret and password again when changing the Akeneo URL');
+            const { akeneoConnectionSettings } = await adminClient.query<{
+                akeneoConnectionSettings: { baseUrl: string };
+            }>(CONNECTION);
+            expect(akeneoConnectionSettings.baseUrl).toBe(akeneo.url);
+            expect(otherServer.requests).toEqual([]);
+        });
+
+        it('are still used for the saved URL', async () => {
+            const { validateAkeneoCredentials } = await adminClient.query<{
+                validateAkeneoCredentials: { valid: boolean };
+            }>(VALIDATE_INPUT, { input: { baseUrl: `${akeneo.url}/` } });
+            expect(validateAkeneoCredentials.valid).toBe(true);
+        });
+    });
+
     it.each([
         ['an unknown Akeneo channel', { channelCode: 'nope' }, 'Akeneo channel "nope" does not exist'],
         [
@@ -125,6 +164,14 @@ describe('Connection and sync settings', () => {
         await expect(saveSyncSettings(adminClient, input)).rejects.toThrow(message);
     });
 });
+
+const VALIDATE_INPUT = gql`
+    mutation ValidateInput($input: ValidateAkeneoCredentialsInput) {
+        validateAkeneoCredentials(input: $input) {
+            valid
+        }
+    }
+`;
 
 const VALIDATE = gql`
     mutation Validate {

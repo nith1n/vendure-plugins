@@ -1,4 +1,4 @@
-import { Readable } from 'stream';
+import { Readable, Transform } from 'stream';
 import { ReadableStream } from 'stream/web';
 
 import { AkeneoCredentials } from '../types';
@@ -29,12 +29,22 @@ export interface AkeneoApiClientOptions {
     downloadTimeoutMs: number;
     /** Retries for rate limiting (429), 5xx gateway errors and network failures. */
     maxRetries: number;
+    /** Largest file a download may deliver. */
+    maxDownloadBytes: number;
 }
 
 export interface AkeneoDownload {
     stream: Readable;
     contentType: string | null;
     filename: string | null;
+}
+
+/** A file larger than {@link AkeneoApiClientOptions.maxDownloadBytes}. */
+export class AkeneoDownloadTooLargeError extends Error {
+    constructor(readonly maxBytes: number) {
+        super(`The file is larger than the ${maxBytes} byte download limit`);
+        this.name = 'AkeneoDownloadTooLargeError';
+    }
 }
 
 export class AkeneoApiError extends Error {
@@ -221,8 +231,23 @@ export class AkeneoApiClient {
     async download(pathOrUrl: string): Promise<AkeneoDownload> {
         const response = await this.send(pathOrUrl, undefined, '*/*', this.options.downloadTimeoutMs);
         if (!response.body) throw new AkeneoApiError(`Empty download from ${pathOrUrl}`, response.status);
+        const maxBytes = this.options.maxDownloadBytes;
+        if (Number(response.headers.get('content-length') ?? 0) > maxBytes) {
+            await response.body.cancel();
+            throw new AkeneoDownloadTooLargeError(maxBytes);
+        }
+        // The declared length can be missing or wrong, so count what actually arrives too
+        let received = 0;
+        const limit = new Transform({
+            transform(chunk: Buffer, _encoding, callback) {
+                received += chunk.length;
+                callback(received > maxBytes ? new AkeneoDownloadTooLargeError(maxBytes) : null, chunk);
+            },
+        });
+        const body = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
+        body.on('error', e => limit.destroy(e));
         return {
-            stream: Readable.fromWeb(response.body as ReadableStream<Uint8Array>),
+            stream: body.pipe(limit),
             contentType: response.headers.get('content-type'),
             filename: parseFilename(response.headers.get('content-disposition')),
         };

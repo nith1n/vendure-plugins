@@ -10,7 +10,7 @@ import {
 import gql from 'graphql-tag';
 import path from 'path';
 
-import { AkeneoSyncPlugin } from '../../src';
+import { AkeneoSyncPlugin, AkeneoSyncPluginOptions } from '../../src';
 import { catalogFixture } from '../fake-akeneo/fake-akeneo-data';
 import {
     FAKE_CLIENT_ID,
@@ -38,7 +38,7 @@ const initialData: InitialData = {
  * A Vendure server with the plugin, plus a fake Akeneo serving the test catalog. Each spec file
  * gets its own, on its own port.
  */
-export function createAkeneoTestEnvironment(port: number) {
+export function createAkeneoTestEnvironment(port: number, pluginOptions: AkeneoSyncPluginOptions = {}) {
     const akeneo = new FakeAkeneoServer(catalogFixture());
     const env = createTestEnvironment(
         mergeConfig(testConfig, {
@@ -48,6 +48,7 @@ export function createAkeneoTestEnvironment(port: number) {
                     encryptionKey: 'e2e-encryption-key-of-a-reasonable-length',
                     // The fake Akeneo runs on plain http
                     allowInsecureBaseUrl: true,
+                    ...pluginOptions,
                 }),
             ],
         }),

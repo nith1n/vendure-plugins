@@ -19,7 +19,7 @@ import {
 } from '@vendure/core';
 import { In } from 'typeorm';
 
-import { AkeneoApiClient } from '../akeneo/akeneo-api-client';
+import { AkeneoApiClient, AkeneoDownloadTooLargeError } from '../akeneo/akeneo-api-client';
 import { AkeneoLookups } from '../akeneo/akeneo-lookups';
 import { AkeneoAsset, AkeneoAssetValue } from '../akeneo/akeneo-types';
 import { ASSET_SYNC_QUEUE, loggerCtx } from '../constants';
@@ -234,6 +234,16 @@ export class AkeneoAssetSyncService implements OnModuleInit {
     }
 
     private async download(ctx: RequestContext, client: AkeneoApiClient, image: ResolvedImage) {
+        try {
+            return await this.downloadAsset(ctx, client, image);
+        } catch (e: unknown) {
+            if (!(e instanceof AkeneoDownloadTooLargeError)) throw e;
+            Logger.warn(`Skipping Akeneo file "${image.fileCode}": ${e.message}`, loggerCtx);
+            return null;
+        }
+    }
+
+    private async downloadAsset(ctx: RequestContext, client: AkeneoApiClient, image: ResolvedImage) {
         const file =
             image.source === 'media'
                 ? await client.downloadMediaFile(image.fileCode)

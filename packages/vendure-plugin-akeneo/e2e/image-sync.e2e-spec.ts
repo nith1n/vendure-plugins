@@ -26,7 +26,7 @@ type Product = WithAssets & {
 const BELT = '00000000-0000-4000-8000-000000000010';
 
 describe('Image sync', () => {
-    const env = createAkeneoTestEnvironment(8104);
+    const env = createAkeneoTestEnvironment(8104, { maxDownloadBytes: 1024 });
     const { adminClient, akeneo } = env;
 
     async function product(akeneoId: string): Promise<Product> {
@@ -114,6 +114,18 @@ describe('Image sync', () => {
         });
         await runProductSync(adminClient);
         expect(names(await product(BELT))).toEqual(['poster.png', 'Shirt front', 'hand-made.png']);
+    });
+
+    it('skips files over the download limit, with or without a declared size', async () => {
+        const akeneoBelt = akeneo.data.products.find(p => p.uuid === BELT);
+        if (!akeneoBelt) throw new Error('fixture changed');
+        akeneoBelt.values.image = [{ locale: null, scope: null, data: FILES.large }];
+        akeneoBelt.values.detail_image = [{ locale: null, scope: null, data: FILES.largeChunked }];
+        const status = await runProductSync(adminClient);
+        expect(status).toMatchObject({ state: 'COMPLETED', error: null });
+        expect(status.images).toMatchObject({ skipped: 2, failed: 0 });
+        // Neither file became an asset; the belt keeps only the image added in Vendure
+        expect(names(await product(BELT))).toEqual(['hand-made.png']);
     });
 
     it('skips Asset Manager assets whose image is only a link', async () => {

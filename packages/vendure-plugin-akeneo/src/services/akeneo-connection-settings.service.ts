@@ -23,6 +23,8 @@ import { requestAkeneoToken } from '../utils/akeneo-oauth';
 import { SecretCipher } from '../utils/secret-cipher';
 
 const MAX_FIELD_LENGTH = 255;
+/** Shorter keys are easier to guess; the key is hashed to 256 bits either way. */
+const MIN_KEY_LENGTH = 32;
 
 @Injectable()
 export class AkeneoConnectionSettingsService {
@@ -34,6 +36,13 @@ export class AkeneoConnectionSettingsService {
     ) {
         if (options.encryptionKey) {
             this.cipher = new SecretCipher(options.encryptionKey);
+            if (options.encryptionKey.length < MIN_KEY_LENGTH) {
+                Logger.warn(
+                    `The Akeneo encryptionKey is shorter than ${MIN_KEY_LENGTH} characters. ` +
+                        'Use a long random value, e.g. from `openssl rand -base64 32`.',
+                    loggerCtx,
+                );
+            }
         } else {
             Logger.warn(
                 'No encryptionKey configured (AKENEO_ENCRYPTION_KEY). Akeneo credentials cannot be saved or read.',
@@ -65,6 +74,10 @@ export class AkeneoConnectionSettingsService {
             throw new UserInputError(
                 'Both secret and password are required when creating Akeneo connection settings',
             );
+        }
+        // The stored secret and password may only ever go to the host they were entered for
+        if (existing && existing.baseUrl !== baseUrl && (!secret || !password)) {
+            throw new UserInputError('Enter the secret and password again when changing the Akeneo URL');
         }
 
         const settings = existing ?? new AkeneoConnectionSettings({ channelId: ctx.channelId });
@@ -120,11 +133,19 @@ export class AkeneoConnectionSettingsService {
     ): Promise<AkeneoCredentialValidationResult> {
         const stored = await this.findForChannel(ctx);
         const storedCredentials = stored ? this.decryptCredentials(stored) : undefined;
-
-        const pick = (key: keyof AkeneoCredentials) => {
+        const given = (key: keyof AkeneoCredentials) => {
             const value = input?.[key];
-            return value != null && value.trim() !== '' ? value : storedCredentials?.[key];
+            return value != null && value.trim() !== '' ? value : undefined;
         };
+        // Stored values may only be sent to the stored host: testing another URL needs the
+        // secret and password entered again, or they could be sent to any server
+        const testsStoredHost =
+            !given('baseUrl') || this.normalizeBaseUrl(given('baseUrl') as string) === stored?.baseUrl;
+        const pick = (key: keyof AkeneoCredentials) =>
+            given(key) ??
+            (testsStoredHost || key === 'clientId' || key === 'username'
+                ? storedCredentials?.[key]
+                : undefined);
         const candidate: Partial<AkeneoCredentials> = {
             baseUrl: pick('baseUrl'),
             clientId: pick('clientId'),
@@ -133,6 +154,9 @@ export class AkeneoConnectionSettingsService {
             password: pick('password'),
         };
         const missing = (Object.keys(candidate) as Array<keyof AkeneoCredentials>).filter(k => !candidate[k]);
+        if (!testsStoredHost && (missing.includes('secret') || missing.includes('password'))) {
+            throw new UserInputError('Enter the secret and password again to test another Akeneo URL');
+        }
         if (missing.length) {
             throw new UserInputError(`Missing Akeneo credentials: ${missing.join(', ')}`);
         }
