@@ -2,9 +2,9 @@
 
 Vendure plugins by Valoriz, one package per plugin in `packages/`:
 
-| Package                                                                   | Description                                                     |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [`@valoriz/vendure-plugin-akeneo`](packages/vendure-plugin-akeneo#readme) | Sync categories, products, variants and images from Akeneo PIM. |
+| Package                                                                  | Description                                                     |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| [`@nith1n/vendure-plugin-akeneo`](packages/vendure-plugin-akeneo#readme) | Sync categories, products, variants and images from Akeneo PIM. |
 
 ## Development
 

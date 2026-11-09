@@ -21,14 +21,14 @@ Syncs run on demand from the Dashboard and are processed by the Vendure worker, 
 ## Installation
 
 ```bash
-npm install @valoriz/vendure-plugin-akeneo
+npm install @nith1n/vendure-plugin-akeneo
 ```
 
 Add the plugin to your Vendure config:
 
 ```ts
 // vendure-config.ts
-import { AkeneoSyncPlugin } from '@valoriz/vendure-plugin-akeneo';
+import { AkeneoSyncPlugin } from '@nith1n/vendure-plugin-akeneo';
 
 export const config: VendureConfig = {
   // ...

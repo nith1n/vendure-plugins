@@ -1,10 +1,10 @@
 {
-  "name": "valoriz-vendure-plugins",
+  "name": "vendure-plugins",
   "private": true,
   "description": "Vendure plugins by Valoriz. Each plugin lives in packages/, with its own dev server and tests.",
   "license": "MIT",
   "scripts": {
-    "dev": "pnpm --filter @valoriz/vendure-plugin-akeneo dev",
+    "dev": "pnpm --filter @nith1n/vendure-plugin-akeneo dev",
     "build": "pnpm -r build",
     "check": "pnpm -r check",
     "test": "pnpm -r test",

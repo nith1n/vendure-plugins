@@ -4,7 +4,7 @@ A pnpm workspace of publishable Vendure plugins, laid out like Vendure's plugin 
 
 ## Project Layout
 
-- `packages/vendure-plugin-akeneo/` — the `@valoriz/vendure-plugin-akeneo` npm package
+- `packages/vendure-plugin-akeneo/` — the `@nith1n/vendure-plugin-akeneo` npm package
   - `src/` — the plugin; `src/index.ts` is the public API
   - `src/dashboard/` — React dashboard extension, shipped as source next to the compiled plugin
   - `dev-server/` — Vendure app used to develop and try the plugin: config, entries, migrations, `static/`, Vite config
