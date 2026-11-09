@@ -39,7 +39,7 @@ export default tseslint.config(
     },
     {
         // Plain JS config files are not part of any tsconfig
-        files: ['**/*.{js,mjs,cjs}'],
+        files: ['**/*.{js,mjs,cjs}', '**/vitest.config.mts'],
         extends: [tseslint.configs.disableTypeChecked],
     },
     prettierConfig,

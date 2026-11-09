@@ -6,7 +6,10 @@ admin-ui
 # Commit the identity-only Project Link Manifest. Keep all other local Vendure state ignored.
 .vendure/*
 !.vendure/project.json
+packages/*/.vendure/*
+!packages/*/.vendure/project.json
 .env
 .env.*
 !.env.example
 **/dev-server/gql
+**/e2e/**/__data__

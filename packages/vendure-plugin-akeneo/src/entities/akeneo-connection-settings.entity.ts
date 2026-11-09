@@ -51,7 +51,7 @@ export class AkeneoConnectionSettings extends VendureEntity {
     @Column({ type: 'varchar', length: 16, default: AkeneoCredentialStatus.UNTESTED })
     lastValidationStatus: AkeneoCredentialStatus;
 
-    @Column({ type: 'timestamp', nullable: true })
+    @Column({ type: Date, nullable: true })
     lastValidatedAt: Date | null;
 
     @Column({ type: 'text', nullable: true })
@@ -100,7 +100,7 @@ export class AkeneoConnectionSettings extends VendureEntity {
      * Start of the last product sync run that completed. A "changes only" run fetches the Akeneo
      * products updated since then.
      */
-    @Column({ type: 'timestamp', nullable: true })
+    @Column({ type: Date, nullable: true })
     productSyncedFrom: Date | null;
 
     /**

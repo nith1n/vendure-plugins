@@ -12,6 +12,7 @@ Vendure plugins by Valoriz, one package per plugin in `packages/`:
 pnpm install
 pnpm run dev     # dev server of the Akeneo plugin
 pnpm run check   # type-check every package
+pnpm run test    # run every package's tests
 pnpm run lint
 pnpm run build   # build every package
 ```

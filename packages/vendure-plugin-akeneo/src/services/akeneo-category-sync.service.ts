@@ -237,12 +237,15 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         const byCode = new Map(categories.map(c => [c.code, c]));
         const referenced = categories.flatMap(c => (c.parent ? [c.code, c.parent] : [c.code]));
         const existing = await this.findByAkeneoCodes(ctx, [...new Set(referenced)]);
-        const rootId = await this.getRootCollectionId(ctx);
+        // Vendure creates its root collection with the first collection, so look it up only when moving
+        let rootId: ID | undefined;
+        const getRootId = async () => (rootId ??= await this.getRootCollectionId(ctx));
         const done = new Set<string>();
 
-        const resolveParentId = async (parentCode: string | null): Promise<ID> => {
+        /** The parent collection's id; undefined for a top-level collection. */
+        const resolveParentId = async (parentCode: string | null): Promise<ID | undefined> => {
             // Without the tree root as a Collection, its children are top-level
-            if (!parentCode || (parentCode === tree.rootCode && !tree.includeRoot)) return rootId;
+            if (!parentCode || (parentCode === tree.rootCode && !tree.includeRoot)) return undefined;
             const parentInPage = byCode.get(parentCode);
             if (parentInPage && !done.has(parentCode)) await upsert(parentInPage);
             const found = existing.get(parentCode);
@@ -251,7 +254,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
                 throw new AkeneoApiError(`Akeneo category "${parentCode}" is its own ancestor`, null);
             }
             // Parent is on a later page: create it now, its real data updates it then
-            const placeholder = await this.create(ctx, parentCode, {}, rootId, tree);
+            const placeholder = await this.create(ctx, parentCode, {}, undefined, tree);
             existing.set(parentCode, placeholder);
             counts.placeholders++;
             return placeholder.id;
@@ -269,7 +272,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
                 counts.created++;
                 return;
             }
-            const changed = await this.update(ctx, current, category, parentId, tree);
+            const changed = await this.update(ctx, current, category, parentId ?? (await getRootId()), tree);
             counts[changed ? 'updated' : 'unchanged']++;
         };
 
@@ -283,7 +286,8 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         ctx: RequestContext,
         code: string,
         labels: AkeneoLabels,
-        parentId: ID,
+        /** Undefined creates a top-level collection. */
+        parentId: ID | undefined,
         tree: TreeContext,
     ): Promise<ExistingCollection> {
         const translations = this.namesFromLabels(ctx, code, labels, tree.localeMapping);
@@ -302,7 +306,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         });
         return {
             id: collection.id,
-            parentId,
+            parentId: collection.parentId,
             names: translations,
             hasCategoryFilter: true,
             otherFilters: [],
@@ -402,6 +406,7 @@ export class AkeneoCategorySyncService implements OnModuleInit {
         );
     }
 
+    /** Only call once a collection exists: Vendure creates the root collection with the first one. */
     private async getRootCollectionId(ctx: RequestContext): Promise<ID> {
         const root = await this.connection
             .getRepository(ctx, Collection)

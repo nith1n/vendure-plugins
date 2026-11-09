@@ -672,10 +672,13 @@ export class AkeneoProductSyncService implements OnModuleInit {
                     optionIds,
                     enabled: item.enabled,
                     translations: this.translations(names),
-                    ...(prices?.length ? { prices } : {}),
                     customFields: { akeneoUuid: item.uuid },
                 },
             ]);
+            if (prices?.length) {
+                // Creating a variant ignores `prices` (it only takes a single `price`), so set them after
+                await this.productVariantService.update(ctx, [{ id: created.id, prices }]);
+            }
             return { outcome: 'created', id: created.id, enabledChanged: true };
         }
 

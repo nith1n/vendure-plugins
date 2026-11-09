@@ -164,11 +164,14 @@ This package lives in a pnpm workspace. From the repository root:
 pnpm install
 pnpm run dev      # Vendure dev server with the plugin, from packages/vendure-plugin-akeneo/dev-server
 pnpm run check    # type-check
+pnpm run test     # unit and end-to-end tests
 pnpm run lint
 pnpm run build    # build the package to dist/
 ```
 
 The dev server reads its database settings and `AKENEO_ENCRYPTION_KEY` from `packages/vendure-plugin-akeneo/.env`.
+
+The end-to-end tests in `e2e/` start a Vendure server with the plugin on an in-memory SQLite database, and a fake Akeneo API serving a small fixture catalog (`e2e/fake-akeneo/`), so they need neither a database nor an Akeneo instance. Dev-server migrations: `pnpm run migrate generate <Name>`, `pnpm run migrate run`, `pnpm run migrate revert`.
 
 ## License
 

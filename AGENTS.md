@@ -42,7 +42,8 @@ A pnpm workspace of publishable Vendure plugins, laid out like Vendure's plugin 
 - Type-check: `pnpm run check`
 - Build the packages: `pnpm run build`
 - Lint and format: `pnpm run lint`, `pnpm run format:check`
-- Generate a dev-server migration (in the plugin package): `pnpm run migrate --generate <Name>`
+- Dev-server migrations (in the plugin package): `pnpm run migrate generate <Name>`, `pnpm run migrate run`, `pnpm run migrate revert`
+- Tests (in the plugin package): `pnpm run test`
 
 ## Quality Checks
 
