@@ -15,7 +15,8 @@ Syncs run on demand from the Dashboard and are processed by the Vendure worker, 
 ## Requirements
 
 - Vendure 3.8 or later, with the React Dashboard (`@vendure/dashboard`). The older Angular Admin UI is not supported.
-- An Akeneo instance with REST API access: Akeneo Cloud (Serenity / Growth Edition) or a self-hosted Akeneo 7.0 or later. Syncing Asset Manager images needs an edition with the Asset Manager.
+- Akeneo 7.0 or later with REST API access: Akeneo Cloud (Serenity or Growth Edition), or a self-hosted Community or Enterprise Edition. The plugin uses the UUID-based product API, which Akeneo added in 7.0.
+- Syncing Asset Manager images needs an edition with the Asset Manager: Enterprise Edition or Serenity. Image attributes work in every edition.
 
 ## Installation
 
@@ -64,14 +65,15 @@ The plugin ships a Dashboard extension: a **Settings > Akeneo Sync** page. If yo
 
 ### Akeneo connection
 
-In Akeneo, create a connection under **Connect > Connection settings** and copy its client ID, secret, username and password. The connection's user needs to be able to view:
+In Akeneo, create a connection under **Connect > Connection settings** and copy its client ID, secret, username and password. The connection's user needs a role with these Web API permissions:
 
-- channels, locales and currencies;
-- categories, attributes, attribute options, families and family variants;
-- products and product models, and their media files;
-- assets and asset families, if you sync Asset Manager images.
+- **Overall Web API access**;
+- **List channels**, **List locales**, **List categories**, **List attributes**, **List attribute options**, **List families** and **List products** (which also covers product models and their media files);
+- **List asset families** and **List assets**, if you sync Asset Manager images.
 
-The plugin only reads from Akeneo. It never changes anything there.
+The plugin only reads from Akeneo, so the user doesn't need any edit permissions.
+
+On Enterprise Edition and Serenity, the user's group permissions also decide which products, attribute groups and locales the API shows. Give the user's group view access to every category, attribute group and locale you sync. A product hidden from the user looks deleted to the plugin, so **Cleanup** would offer to remove it.
 
 ## Usage
 
