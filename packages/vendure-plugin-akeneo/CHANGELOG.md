@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2 (2026-11-10)
+
+- **Dependencies:** `@nestjs/common`, `@nestjs/graphql`, `@vendure/common`, `graphql-tag` and `typeorm` are now declared as peer dependencies. The plugin uses them at runtime, and before it relied on them being reachable through `@vendure/core`, which strict installs (Yarn Plug'n'Play, pnpm without hoisting) don't allow. Every Vendure project already has them.
+- **Package:** the development tooling moved to the repository root, so the published package no longer lists any dev dependencies.
+
 ## 0.1.1 (2026-11-09)
 
 - **Dashboard:** the extension no longer needs `gql.tada` installed in your project. Before, the Dashboard failed with "Failed to resolve import "gql.tada"" in projects without it.

@@ -11,27 +11,6 @@ importers:
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))
-      eslint:
-        specifier: 10.14.0
-        version: 10.14.0(jiti@2.7.0)(supports-color@7.2.0)
-      eslint-config-prettier:
-        specifier: 10.1.8
-        version: 10.1.8(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))
-      globals:
-        specifier: 17.14.0
-        version: 17.14.0
-      prettier:
-        specifier: 3.9.10
-        version: 3.9.10
-      typescript:
-        specifier: 5.8.2
-        version: 5.8.2
-      typescript-eslint:
-        specifier: 8.72.1
-        version: 8.72.1(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.8.2)
-
-  packages/vendure-plugin-akeneo:
-    devDependencies:
       '@graphql-typed-document-node/core':
         specifier: 3.2.0
         version: 3.2.0(graphql@16.14.2)
@@ -77,6 +56,15 @@ importers:
       dotenv:
         specifier: 18.0.9
         version: 18.0.9
+      eslint:
+        specifier: 10.14.0
+        version: 10.14.0(jiti@2.7.0)(supports-color@7.2.0)
+      eslint-config-prettier:
+        specifier: 10.1.8
+        version: 10.1.8(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))
+      globals:
+        specifier: 17.14.0
+        version: 17.14.0
       gql.tada:
         specifier: 1.11.4
         version: 1.11.4(graphql@16.14.2)(typescript@5.8.2)
@@ -92,6 +80,9 @@ importers:
       pg:
         specifier: 8.23.1
         version: 8.23.1
+      prettier:
+        specifier: 3.9.10
+        version: 3.9.10
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -116,6 +107,9 @@ importers:
       typescript:
         specifier: 5.8.2
         version: 5.8.2
+      typescript-eslint:
+        specifier: 8.72.1
+        version: 8.72.1(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.8.2)
       unplugin-swc:
         specifier: ^2.0.0
         version: 2.0.0(@swc/core@1.16.22(@swc/helpers@0.5.23))(esbuild@0.28.2)(rollup@4.67.4)(vite@7.3.7(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0))
@@ -125,6 +119,30 @@ importers:
       vitest:
         specifier: ^5.1.0
         version: 5.1.0(@types/node@26.6.6)(vite@7.3.7(@types/node@26.6.6)(jiti@2.7.0)(lightningcss@1.33.0))
+
+  packages/vendure-plugin-akeneo:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^12.0.1
+        version: 12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0)
+      '@nestjs/graphql':
+        specifier: ^14.0.0
+        version: 14.0.3(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@12.3.2)(graphql@16.14.2)(reflect-metadata@0.2.2)(ts-morph@21.0.1)(typescript@5.8.2)
+      '@vendure/common':
+        specifier: ^3.8.0
+        version: 3.8.1
+      '@vendure/core':
+        specifier: ^3.8.0
+        version: 3.8.1(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-morph@21.0.1)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.23))(@types/node@26.6.6)(typescript@5.8.2))(typescript@5.8.2)
+      '@vendure/dashboard':
+        specifier: ^3.8.0
+        version: 3.8.1(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(@tanstack/router-core@1.171.39)(@tiptap/core@3.32.2(@tiptap/pm@3.32.2))(@tiptap/extensions@3.32.2(@tiptap/core@3.32.2(@tiptap/pm@3.32.2))(@tiptap/pm@3.32.2))(@types/node@26.6.6)(csstype@3.2.3)(esbuild@0.28.2)(eslint@10.14.0(jiti@2.7.0)(supports-color@7.2.0))(express@5.3.0(supports-color@7.2.0))(jiti@2.7.0)(lightningcss@1.33.0)(rollup@4.67.4)(supports-color@7.2.0)(typescript@5.8.2)
+      graphql-tag:
+        specifier: ^2.12.6
+        version: 2.12.7(graphql@16.14.2)
+      typeorm:
+        specifier: ^0.3.21
+        version: 0.3.31(pg@8.23.1)(sql.js@1.15.2)(supports-color@7.2.0)(ts-node@10.9.2(@swc/core@1.16.22(@swc/helpers@0.5.23))(@types/node@26.6.6)(typescript@5.8.2))
 
 packages:
 
