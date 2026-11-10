@@ -1,6 +1,6 @@
 {
   "name": "@nith1n/vendure-plugin-akeneo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sync categories, products, variants and images from Akeneo PIM to Vendure, with a dashboard to configure and run the sync.",
   "license": "MIT",
   "repository": {

@@ -17,7 +17,7 @@ import {
     TabsList,
     TabsTrigger,
 } from '@vendure/dashboard';
-import type { ResultOf } from '@/gql';
+import type { ResultOf } from './graphql';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';

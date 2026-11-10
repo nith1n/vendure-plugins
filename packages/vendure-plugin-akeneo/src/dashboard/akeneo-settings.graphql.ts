@@ -1,4 +1,4 @@
-import { graphql } from '@/gql';
+import { graphql } from './graphql';
 
 export const akeneoSettingsFragment = graphql(`
     fragment AkeneoSettings on AkeneoConnectionSettings {

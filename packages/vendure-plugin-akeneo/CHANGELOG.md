@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 (2026-11-09)
+
+- **Dashboard:** the extension no longer needs `gql.tada` installed in your project. Before, the Dashboard failed with "Failed to resolve import "gql.tada"" in projects without it.
+- **Docs:** install commands for pnpm and yarn, and the Vite setting pnpm projects need for the Akeneo Sync page to appear.
+
 ## 0.1.0 (2026-11-09)
 
 First release. Syncs run on demand from the dashboard (Settings > Akeneo Sync).

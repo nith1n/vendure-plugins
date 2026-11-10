@@ -1,5 +1,5 @@
 import { api } from '@vendure/dashboard';
-import type { ResultOf } from '@/gql';
+import type { ResultOf } from './graphql';
 
 import {
     akeneoProductSyncStatusQuery,

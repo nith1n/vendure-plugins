@@ -11,7 +11,7 @@ import {
     Badge,
     Button,
 } from '@vendure/dashboard';
-import type { ResultOf } from '@/gql';
+import type { ResultOf } from './graphql';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';

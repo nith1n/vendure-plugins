@@ -14,7 +14,7 @@ import {
     PageTitle,
     PasswordInput,
 } from '@vendure/dashboard';
-import type { ResultOf } from '@/gql';
+import type { ResultOf } from './graphql';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';

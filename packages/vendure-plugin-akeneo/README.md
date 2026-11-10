@@ -22,6 +22,10 @@ Syncs run on demand from the Dashboard and are processed by the Vendure worker, 
 
 ```bash
 npm install @nith1n/vendure-plugin-akeneo
+# or
+pnpm add @nith1n/vendure-plugin-akeneo
+# or
+yarn add @nith1n/vendure-plugin-akeneo
 ```
 
 Add the plugin to your Vendure config:
@@ -53,6 +57,16 @@ npx vendure migrate --run
 ### Dashboard
 
 The plugin ships a Dashboard extension: a **Settings > Akeneo Sync** page. If your project builds the Dashboard with the `vendureDashboardPlugin` Vite plugin (the default for new Vendure projects), the extension is picked up automatically from your Vendure config. Rebuild the Dashboard after installing.
+
+**With pnpm**, also tell the Vite plugin where your `node_modules` is. By default it looks next to `@vendure/core`, which pnpm keeps in its own store, so plugins installed from npm aren't found and the page doesn't appear:
+
+```ts
+// vite.config.mts
+vendureDashboardPlugin({
+    // ...
+    pluginPackageScanner: { nodeModulesRoot: join(__dirname, 'node_modules') },
+}),
+```
 
 ### Options
 
