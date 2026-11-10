@@ -54,5 +54,8 @@
     "@vendure/dashboard": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "@vendure/core": "3.8.1"
   }
 }

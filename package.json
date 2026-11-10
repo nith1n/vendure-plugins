@@ -24,7 +24,6 @@
     "@vendure/asset-server-plugin": "3.8.1",
     "@vendure/cli": "3.8.1",
     "@vendure/common": "3.8.1",
-    "@vendure/core": "3.8.1",
     "@vendure/dashboard": "3.8.1",
     "@vendure/email-plugin": "3.8.1",
     "@vendure/graphiql-plugin": "3.8.1",
